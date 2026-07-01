@@ -26,7 +26,7 @@ export default function Sidebar() {
       <div className="px-5 py-5 border-b border-white/5">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 border border-gold/40 bg-gold/10 flex items-center justify-center text-gold font-mono font-bold text-lg shadow-glow-gold">
-            A
+            BMS
           </div>
           <div className="leading-tight">
             <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-gold/70">
@@ -38,7 +38,7 @@ export default function Sidebar() {
           </div>
         </div>
         <div className="mt-3 flex items-center gap-2">
-          <StatusBadge variant="success" dot>v2.0</StatusBadge>
+          <StatusBadge variant="success" dot>v2.5 UPDATE</StatusBadge>
           <StatusBadge variant="default">Live</StatusBadge>
         </div>
       </div>
