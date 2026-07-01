@@ -78,7 +78,7 @@ export default function Sidebar() {
       <div className="px-5 py-4 border-t border-white/5 space-y-2">
         <div className="flex items-center gap-2">
           <StatusBadge variant="default" dot>Ready</StatusBadge>
-          <StatusBadge variant="outline">v2.5 UPDATE.0</StatusBadge>
+          <StatusBadge variant="outline">v2.5 UPDATE</StatusBadge>
         </div>
         <a
           href="https://discord.gg/QzJGyYctDr"
