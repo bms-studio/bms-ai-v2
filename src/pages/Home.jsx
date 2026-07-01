@@ -60,7 +60,7 @@ export default function Home() {
         <section className="mb-12 relative">
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             <StatusBadge variant="success" dot>System Online</StatusBadge>
-            <StatusBadge variant="default">v2.0</StatusBadge>
+            <StatusBadge variant="default">v2.5 UPDATE</StatusBadge>
             <StatusBadge variant="outline">{AI_MODELS.length} Models</StatusBadge>
             <a
               href="https://discord.gg/QzJGyYctDr"

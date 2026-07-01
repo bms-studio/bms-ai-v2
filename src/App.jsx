@@ -43,7 +43,7 @@ export default function App() {
         </main>
         <footer className="border-t border-white/5 px-4 py-6 bg-jet/50">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-[10px] font-mono uppercase tracking-[0.18em] text-white/40">
-            <span>(c) 2026 BMS Studio // Auralis AI v2.0</span>
+            <span>(c) 2026 BMS Studio // Auralis AI v2.5 UPDATE</span>
             <a
               href="https://discord.gg/QzJGyYctDr"
               target="_blank" rel="noreferrer"
