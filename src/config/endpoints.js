@@ -1,15 +1,6 @@
-/* ============================================================
-   Auralis AI v2 - Endpoints & Features Registry
-   Single source of truth for all 100+ API integrations.
-   ============================================================ */
-
 export const SYNOX_BASE = 'https://api.synoxcloud.xyz'
 export const XYLO_BASE  = 'https://xyloapi.qzz.io'
 
-/* ============================================================
-   52 AI Chat Models (xyloapi / synox proxy)
-   Pattern: {XYLO_BASE}/api/ai-chat/{modelId}
-   ============================================================ */
 export const AI_MODELS = [
   { id: 'claude-opus-4.8',        name: 'Claude Opus 4.8',      provider: 'Anthropic', category: 'Claude',    accent: '#f59e0b' },
   { id: 'claude-opus-4.7',        name: 'Claude Opus 4.7',      provider: 'Anthropic', category: 'Claude',    accent: '#fb7185' },
@@ -42,6 +33,8 @@ export const AI_MODELS = [
   { id: 'qwen3-max',              name: 'Qwen 3 Max',           provider: 'Alibaba',   category: 'Qwen',      accent: '#f43f5e' },
   { id: 'qwen3-next-80b-a3b-instruct', name: 'Qwen 3 Next 80B', provider: 'Alibaba',   category: 'Qwen',      accent: '#ec4899' },
 
+  { id: 'minimax',                name: 'Minimax',              provider: 'Minimax',   category: 'BMS AI',    accent: '#0ea5e9' },
+
   { id: 'copilot-ai',             name: 'Copilot AI',           provider: 'Microsoft', category: 'Other',     accent: '#4ade80' },
   { id: 'mistral',                name: 'Mistral',              provider: 'Mistral AI',category: 'Other',     accent: '#fb923c' },
   { id: 'x.ai-grok-4.1',          name: 'xAI Grok 4.1',         provider: 'xAI',       category: 'Other',     accent: '#a1a1aa' },
@@ -70,15 +63,12 @@ export const AI_MODELS = [
   { id: 'arena-ai',               name: 'Arena AI',             provider: 'Special',   category: 'Specialty', accent: '#71717a' },
   { id: 'asynt-ai',               name: 'Asynt AI',             provider: 'Special',   category: 'Specialty', accent: '#78716c' },
   { id: 'ai-coder',               name: 'AI Coder',             provider: 'Special',   category: 'Specialty', accent: '#22c55e' },
-  { id: 'ai-rangking',            name: 'AI Ranking',           provider: 'Special',   category: 'Specialty', accent: '#a855f7' },
-  { id: 'minimax',                name: 'Minimax',              provider: 'Xylo',      category: 'Specialty', accent: '#0ea5e9' }
+  { id: 'ai-rangking',            name: 'AI Ranking',           provider: 'Special',   category: 'Specialty', accent: '#a855f7' }
+
 ]
 
-export const MODEL_CATEGORIES = ['All', 'Claude', 'GPT', 'Gemini', 'Deepseek', 'Llama', 'Qwen', 'Specialty', 'Other']
+export const MODEL_CATEGORIES = ['All', 'Claude', 'GPT', 'Gemini', 'Deepseek', 'Llama', 'Qwen', 'BMS AI', 'Specialty', 'Other']
 
-/* ============================================================
-   Image Generation (2 endpoints)
-   ============================================================ */
 export const IMAGE_GEN = {
   synox: {
     id: 'bms-image',
@@ -101,18 +91,12 @@ export const IMAGE_GEN = {
   }
 }
 
-/* ============================================================
-   File & Image Analysis
-   ============================================================ */
 export const AI_ANALYSIS = [
   { id: 'file-analyze',   name: 'File Analysis',       path: '/api/ai-analyze/file',   method: 'POST', input: 'file',  desc: 'Extract content & insights from documents.' },
   { id: 'image-analyze',  name: 'Image Analysis',      path: '/api/ai-analyze/image',  method: 'POST', input: 'image', desc: 'Describe and analyze image content with AI vision.' },
   { id: 'chat-minimax',   name: 'Minimax Chat',        path: '/api/ai-chat/minimax',   method: 'POST', input: 'text',  desc: 'Specialty reasoning model via Xylo.' }
 ]
 
-/* ============================================================
-   Media & File Uploaders (10 endpoints) - POST, param: image
-   ============================================================ */
 export const UPLOADERS = [
   { id: 'imgur',          name: 'Imgur',           path: '/api/uploader/imgur',           notes: 'Public CDN, popular.' },
   { id: '8uploads',       name: '8upload',         path: '/api/uploader/8uploads',        notes: 'Free file host.' },
@@ -126,11 +110,6 @@ export const UPLOADERS = [
   { id: 'gofile',         name: 'Gofile',          path: '/api/uploader/gofile',          notes: 'Supports all doc/video extensions.' }
 ]
 
-/* ============================================================
-   All-in-One Downloader (single endpoint)
-   GET {SYNOX_BASE}/download/all-in-one?url=...
-   Auto-detects source (50+ supported platforms).
-   ============================================================ */
 export const AIO_DOWNLOADER = {
   method: 'GET',
   base: SYNOX_BASE,
@@ -168,9 +147,6 @@ export const AIO_DOWNLOADER = {
   ]
 }
 
-/* ============================================================
-   News (51 endpoints) - POST, param: category
-   ============================================================ */
 export const NEWS = [
   { id: 'straitstimes',  name: 'The Straits Times',     region: 'Global', path: '/api/news/straitstimes' },
   { id: 'bbc',           name: 'BBC',                   region: 'Global', path: '/api/news/bbc' },
@@ -222,9 +198,6 @@ export const NEWS = [
   { id: 'jakartapost',   name: 'Jakarta Post',          region: 'Indonesia', path: '/api/news/jakartapost' }
 ]
 
-/* ============================================================
-   Image Tools (13 endpoints) - POST, param: image (+ optional)
-   ============================================================ */
 export const IMAGE_TOOLS = [
   { id: 'removebg',       name: 'Remove Background',    path: '/api/image-tool/removebg',       params: ['image'],                              desc: 'Auto remove background.' },
   { id: 'upscale',        name: 'Upscale (Super-Res)',  path: '/api/image-tool/upscale',        params: ['image'],                              desc: 'AI super resolution.' },
@@ -241,9 +214,6 @@ export const IMAGE_TOOLS = [
   { id: 'glow',           name: 'Glow (PNG)',           path: '/api/image-tool/glow',           params: ['image'],                              desc: 'Add a glow on transparent pixels.' }
 ]
 
-/* ============================================================
-   Nav / Sidebar menu
-   ============================================================ */
 export const NAV_GROUPS = [
   {
     title: 'Studio',

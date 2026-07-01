@@ -78,9 +78,9 @@ export default function Home() {
                 <span className="text-gold text-glow-gold">Every AI you need.</span>
               </h1>
               <p className="text-white/50 mt-4 max-w-2xl text-base md:text-lg leading-relaxed">
-                Chat with Claude, GPT, Gemini, DeepSeek and 48 more. Generate images, analyze
+                Chat with Claude, GPT, Gemini, DeepSeek and 48 more model ai. Generate images, analyze
                 files, download media from 28 platforms, scrape news from 54 sources, and run
-                13 image effects. All in one cyberpunk-grade interface.
+                13 image effects. All in one interface.
               </p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <Link to="/chat" className="btn-primary btn-lg">
@@ -95,6 +95,7 @@ export default function Home() {
                 <span>// No login</span>
                 <span>// No API key</span>
                 <span>// Free forever</span>
+                <span>// BMS STUDIO PROJECT</span>
               </div>
             </div>
             <div className="md:col-span-2 relative">
@@ -187,7 +188,7 @@ export default function Home() {
               </div>
               <h3 className="text-2xl font-bold text-white">Join the BMS Studio Discord</h3>
               <p className="text-sm text-white/50 mt-1 max-w-xl">
-                Get help, share prompts, request features, and chat with other AI enthusiasts.
+                Get help, Order Development, request features, and chat with other AI enthusiasts.
               </p>
             </div>
             <a
