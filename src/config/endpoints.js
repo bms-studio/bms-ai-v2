@@ -110,6 +110,28 @@ export const UPLOADERS = [
   { id: 'gofile',         name: 'Gofile',          path: '/api/uploader/gofile',          notes: 'Supports all doc/video extensions.' }
 ]
 
+export const EDIT_SONG = {
+  // All-Site Downloader dipakai untuk fetch audio dari URL sumber.
+  downloader: {
+    method: 'GET',
+    base: SYNOX_BASE,
+    path: '/download/all-in-one',
+    param: 'url',
+  },
+  // Format audio yang didukung untuk editing & upload ke Roblox.
+  formats: [
+    { id: 'mp3',  name: 'MP3',  mime: 'audio/mpeg', ext: 'mp3' },
+    { id: 'ogg',  name: 'OGG',  mime: 'audio/ogg',  ext: 'ogg' },
+    { id: 'flac', name: 'FLAC', mime: 'audio/flac', ext: 'flac' },
+    { id: 'wav',  name: 'WAV',  mime: 'audio/wav',  ext: 'wav' },
+  ],
+  // Batas Roblox untuk audio (per Juni 2024) - untuk validasi.
+  robloxLimits: {
+    maxSizeMB: 20,
+    maxDurationSec: 360, // 6 menit
+  },
+}
+
 export const AIO_DOWNLOADER = {
   method: 'GET',
   base: SYNOX_BASE,
@@ -245,6 +267,12 @@ export const NAV_GROUPS = [
     title: 'Downloaders',
     items: [
       { id: 'downloaders',  label: 'All Sites',     to: '/downloaders' }
+    ]
+  },
+  {
+    title: 'Roblox Tools',
+    items: [
+      { id: 'edit-song',    label: 'Edit Song',     to: '/edit-song' }
     ]
   },
   {

@@ -11,6 +11,7 @@ import Downloaders from "./pages/Downloaders.jsx"
 import News from "./pages/News.jsx"
 import ImageTools from "./pages/ImageTools.jsx"
 import Models from "./pages/Models.jsx"
+import EditSong from "./pages/EditSong.jsx"
 
 function DiscordMini() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/news" element={<News />} />
             <Route path="/image-tools" element={<ImageTools />} />
             <Route path="/models" element={<Models />} />
+            <Route path="/edit-song" element={<EditSong />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </main>

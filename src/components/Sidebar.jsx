@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom"
 import {
   Home, MessageSquare, Sparkles, Upload, Download, Newspaper,
-  Wand2, LayoutGrid, Activity
+  Wand2, LayoutGrid, Activity, Music4
 } from "lucide-react"
 import { NAV_GROUPS } from "../config/endpoints.js"
 import { cn } from "../lib/utils.js"
@@ -17,7 +17,8 @@ const ICONS = {
   downloaders: Download,
   news: Newspaper,
   "image-tools": Wand2,
-  models: LayoutGrid
+  models: LayoutGrid,
+  "edit-song": Music4
 }
 
 export default function Sidebar() {
