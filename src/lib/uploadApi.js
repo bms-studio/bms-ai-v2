@@ -206,7 +206,10 @@ export async function uploadAudio({
     xhr.onerror = () => reject(new Error(
       'Network error saat upload ke Roblox. ' +
       'Cek koneksi internet, CORS preflight, & pastikan API Key valid. ' +
-      '(URL: ' + url + ')'
+      '(URL: ' + url + '). ' +
+      'Tip: buka DevTools → Network, filter "robe" lalu coba ulang. ' +
+      'Kalau ada request "OPTIONS" merah gagal preflight, Roblox belum mengizinkan origin ' +
+      window.location.origin + ' untuk CORS.'
     ))
     xhr.ontimeout = () => reject(new Error(
       'Timeout 180s saat upload ke Roblox. ' +

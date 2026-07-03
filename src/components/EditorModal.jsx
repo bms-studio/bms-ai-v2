@@ -2,12 +2,14 @@
    Auralis AI v2 - Audio Editor Modal
    Pitch / Speed / Volume / Trim editor.
    Produces an edited Blob using OfflineAudioContext.
+   Output formats: WAV (PCM16) / MP3 (lamejs) / OGG (Opus)
    ============================================================ */
 
 import { useEffect, useRef, useState } from "react"
 import { X, Play, Pause, RotateCcw, Save, Music2, Wand2 } from "lucide-react"
 import StatusBadge from "./StatusBadge.jsx"
 import { fileToURL } from "../lib/utils.js"
+import { encodeAudioBuffer, formatMeta } from "../lib/audioEncoder.js"
 
 function fmtTime(sec) {
   if (!isFinite(sec)) return "0:00"
@@ -31,6 +33,8 @@ export default function EditorModal({ open, source, onClose, onApply }) {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [outFormat, setOutFormat] = useState("wav")   // wav | mp3 | ogg
+  const [mp3Kbps, setMp3Kbps] = useState(192)
 
   const audioRef = useRef(null)
   const audioElRef = useRef(null)
@@ -155,17 +159,28 @@ export default function EditorModal({ open, source, onClose, onApply }) {
 
       const rendered = await offline.startRendering()
 
-      // Apply pitch shift via simple resample (we keep speed already applied
-      // via playbackRate; for finer pitch control we'd need a phase vocoder,
-      // so we treat pitch as a stretch hint in filename and add a comment
-      // in metadata).
-      const wav = audioBufferToWav(rendered)
-      const blob = new Blob([wav], { type: "audio/wav" })
-      const outName = (source?.name || "audio")
-        .replace(/\.[^.]+$/, "")
-        .slice(0, 40) + `_p${pitch >= 0 ? "+" : ""}${pitch}_s${speed.toFixed(2)}_v${volume.toFixed(2)}.wav`
+      // Encode ke format yang dipilih user (wav / mp3 / ogg).
+      // Untuk sekarang kita panggil encodeAudioBuffer dengan fallback ke wav
+      // kalau encoder yang diminta tidak tersedia di browser ini.
+      let blob
+      let outName
+      try {
+        blob = await encodeAudioBuffer(rendered, outFormat, { mp3Kbps })
+        const meta = formatMeta(outFormat)
+        outName = (source?.name || "audio")
+          .replace(/\.[^.]+$/, "")
+          .slice(0, 40) + `_p${pitch >= 0 ? "+" : ""}${pitch}_s${speed.toFixed(2)}_v${volume.toFixed(2)}.${meta.ext}`
+      } catch (encErr) {
+        // Fallback ke WAV kalau encoder yang diminta gagal
+        setError(`Encoder ${outFormat.toUpperCase()} tidak tersedia (${encErr?.message || encErr}). Pakai WAV.`)
+        const wav = audioBufferToWav(rendered)
+        blob = new Blob([wav], { type: "audio/wav" })
+        outName = (source?.name || "audio")
+          .replace(/\.[^.]+$/, "")
+          .slice(0, 40) + `_p${pitch >= 0 ? "+" : ""}${pitch}_s${speed.toFixed(2)}_v${volume.toFixed(2)}.wav`
+      }
 
-      onApply?.({ blob, filename: outName, meta: { pitch, speed, volume, trimStart, trimEnd, duration: rendered.duration } })
+      onApply?.({ blob, filename: outName, meta: { pitch, speed, volume, trimStart, trimEnd, duration: rendered.duration, format: outFormat } })
       setBusy(false)
     } catch (err) {
       setBusy(false)
@@ -278,12 +293,62 @@ export default function EditorModal({ open, source, onClose, onApply }) {
             </div>
           )}
 
+          {/* Output format picker */}
+          <div className="panel p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="card-title !mb-0 text-xs">Output format</div>
+              <div className="font-mono text-[10px] text-white/50">
+                {outFormat.toUpperCase()} {outFormat === "mp3" ? `· ${mp3Kbps} kbps` : ""}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { id: "mp3", label: "MP3", sub: "small" },
+                { id: "ogg", label: "OGG", sub: "Opus" },
+                { id: "wav", label: "WAV", sub: "lossless" },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setOutFormat(f.id)}
+                  className={`px-2 py-2 border text-left transition-colors ${
+                    outFormat === f.id
+                      ? "border-gold bg-gold/10 text-gold"
+                      : "border-white/10 bg-jet/30 text-white/60 hover:border-white/20"
+                  }`}
+                >
+                  <div className="font-bold text-sm leading-none">{f.label}</div>
+                  <div className="text-[9px] font-mono mt-0.5 opacity-60">{f.sub}</div>
+                </button>
+              ))}
+            </div>
+            {outFormat === "mp3" && (
+              <div>
+                <div className="flex items-center justify-between text-[10px] font-mono text-white/40 mb-1">
+                  <span>MP3 bitrate</span>
+                  <span className="text-gold">{mp3Kbps} kbps</span>
+                </div>
+                <input
+                  type="range" min={64} max={320} step={32}
+                  value={mp3Kbps}
+                  onChange={(e) => setMp3Kbps(parseInt(e.target.value, 10))}
+                  className="w-full accent-gold"
+                />
+              </div>
+            )}
+            <div className="text-[9px] font-mono text-white/40 leading-relaxed">
+              {outFormat === "mp3" && "MP3: 192 kbps stereo, paling kompatibel untuk Roblox. File kecil."}
+              {outFormat === "ogg" && "OGG: Opus codec, ukuran kecil & cepat. Didukung Chrome/Firefox. Safari mungkin fallback ke WAV."}
+              {outFormat === "wav" && "WAV: PCM 16-bit lossless, ukuran paling besar. Selalu diterima."}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
             <button onClick={reset} className="btn-ghost btn-sm">
               <RotateCcw size={11} /> Reset
             </button>
             <div className="flex items-center gap-2">
-              <StatusBadge variant="outline">Output: WAV / 44.1kHz</StatusBadge>
+              <StatusBadge variant="outline">Output: {outFormat.toUpperCase()}</StatusBadge>
               <button onClick={onClose} className="btn-ghost btn-sm">Cancel</button>
               <button onClick={render} disabled={busy || !audioUrl} className="btn-primary btn-sm">
                 <Save size={11} /> {busy ? "Rendering..." : "Apply & Save"}
