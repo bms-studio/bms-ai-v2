@@ -94,7 +94,7 @@ export const IMAGE_GEN = {
 export const AI_ANALYSIS = [
   { id: 'file-analyze',   name: 'File Analysis',       path: '/api/ai-analyze/file',   method: 'POST', input: 'file',  desc: 'Extract content & insights from documents.' },
   { id: 'image-analyze',  name: 'Image Analysis',      path: '/api/ai-analyze/image',  method: 'POST', input: 'image', desc: 'Describe and analyze image content with AI vision.' },
-  { id: 'chat-minimax',   name: 'Minimax Chat',        path: '/api/ai-chat/minimax',   method: 'POST', input: 'text',  desc: 'Specialty reasoning model via Xylo.' }
+  { id: 'chat-minimax',   name: 'Minimax Chat',        path: '/api/ai-chat/minimax',   method: 'POST', input: 'text',  desc: 'Specialty reasoning model via BmsStudio.' }
 ]
 
 export const UPLOADERS = [
