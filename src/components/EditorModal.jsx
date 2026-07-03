@@ -176,8 +176,14 @@ export default function EditorModal({ open, source, onClose, onApply }) {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-charcoal border border-white/10 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-4 transition-opacity duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-charcoal border-2 border-gold/40 shadow-2xl shadow-gold/10 w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
           <div className="flex items-center gap-2">
             <Wand2 size={14} className="text-gold" />

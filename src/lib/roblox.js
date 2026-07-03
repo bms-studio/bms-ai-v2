@@ -158,6 +158,41 @@ export async function uploadAudioToRoblox({
  *
  * Possible "done" states: 'Success' -> assetId present, 'Failed'/'Cancelled' -> error.
  */
+// Extract assetId from a Roblox operation response. The real Open Cloud API
+// returns the asset path in `response.path` (a string like "assets/12345")
+// while older docs show `response.assetId`. We support both, plus when the
+// response itself IS a path string.
+function _extractOpAssetId(data) {
+  if (!data) return null
+  const r = data.response
+  if (r == null) return null
+  // response is an object (newer shape): { path: "assets/<id>", assetId, ... }
+  if (typeof r === 'object') {
+    if (r.assetId) return String(r.assetId)
+    if (typeof r.path === 'string') {
+      const m = r.path.match(/assets\/(\d+)/i)
+      if (m) return m[1]
+    }
+  }
+  // response is a path string (e.g. "assets/12345")
+  if (typeof r === 'string') {
+    const m = r.match(/assets\/(\d+)/i)
+    if (m) return m[1]
+  }
+  return null
+}
+
+// Extract error from a Roblox operation response (object shape only).
+function _extractOpError(data) {
+  if (!data) return null
+  const r = data.response
+  if (r && typeof r === 'object') {
+    if (r.error && r.error.message) return r.error.message
+    if (r.error && typeof r.error === 'string') return r.error
+  }
+  return null
+}
+
 export async function pollAudioOperation(apiKey, operationId, { timeoutMs = 180_000, intervalMs = 3000 } = {}) {
   const start = Date.now()
   const url = `https://apis.roblox.com/assets/v1/operations/${encodeURIComponent(operationId)}`
@@ -170,16 +205,16 @@ export async function pollAudioOperation(apiKey, operationId, { timeoutMs = 180_
     }
     if (res.ok) {
       const data = await res.json().catch(() => ({}))
-      const state = (data.done === true && data.response)
-        ? (data.response.assetId ? 'Success' : (data.response.error || 'Failed'))
-        : (data.state || 'InProgress')
-      if (state === 'Success' && data.response?.assetId) {
-        return { done: true, assetId: String(data.response.assetId) }
+      if (data && data.done === true) {
+        const assetId = _extractOpAssetId(data)
+        if (assetId) {
+          return { done: true, assetId }
+        }
+        // done but no assetId → either failed or still being processed
+        const errMsg = _extractOpError(data) || data.error || data.state || 'Operation completed without assetId'
+        return { done: true, failed: true, error: String(errMsg) }
       }
-      if (state === 'Failed' || state === 'Cancelled') {
-        const msg = data.response?.error?.message || `Operation ${state}`
-        return { done: true, failed: true, error: msg }
-      }
+      // not done yet -- keep polling
     } else {
       // transient -- keep going unless we hit terminal
       const t = await res.text().catch(() => '')
