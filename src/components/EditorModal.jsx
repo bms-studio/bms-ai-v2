@@ -177,7 +177,7 @@ export default function EditorModal({ open, source, onClose, onApply }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-4 transition-opacity duration-200"
+      className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div

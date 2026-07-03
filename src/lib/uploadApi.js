@@ -163,8 +163,10 @@ export async function uploadAudio({
     // 180 detik = cukup untuk upload audio sampai 20MB di koneksi lambat.
     xhr.timeout = 180000
     xhr.setRequestHeader('x-api-key', key)
-    // Explicit Accept supaya server tidak return HTML error page.
-    xhr.setRequestHeader('Accept', 'application/json')
+    // Jangan set header 'Accept' kustom — bikin request jadi non-simple dan memicu
+    // CORS preflight ke apis.roblox.com. Browser default-nya 'Accept: */*' yang
+    // tetap dianggap simple request oleh spec CORS untuk multipart/form-data.
+    // Lihat: https://fetch.spec.whatwg.org/#cors-safelisted-request-header
 
     if (signal) {
       if (signal.aborted) {
