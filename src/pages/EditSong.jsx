@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Upload, Plus, Wand2, UploadCloud, Trash2, Music2,
-  X, ChevronRight, Loader2, Link2, Sparkles, FileAudio
+  X, ChevronRight, Loader2, Link2, Sparkles, FileAudio,
+  KeyRound, ExternalLink, Eye, EyeOff
 } from "lucide-react"
 import { SectionHead, EmptyState, ErrorBox } from "../components/UI.jsx"
 import StatusBadge from "../components/StatusBadge.jsx"
@@ -15,8 +16,11 @@ import EditorModal from "../components/EditorModal.jsx"
 import QueueItem from "../components/EditSong/QueueItem.jsx"
 import { readID3Cover, readID3Basic } from "../lib/metadata.js"
 import { probeAudio, getBlobDuration } from "../lib/audioProcessor.js"
-import { uploadToRoblox } from "../lib/uploadApi.js"
+import {
+  uploadToRoblox, hasApiKey, getApiKey, setApiKey, getUserId, setUserId
+} from "../lib/uploadApi.js"
 import { fmtBytes } from "../lib/utils.js"
+import { ROBLOX_OPEN_CLOUD } from "../config/endpoints.js"
 
 let __id = 0
 const nextId = () => `q_${Date.now()}_${++__id}`
@@ -30,6 +34,12 @@ export default function EditSong() {
   const [bulkUploading, setBulkUploading] = useState(false)
   const [remoteUrl, setRemoteUrl] = useState("")
   const [globalError, setGlobalError] = useState("")
+
+  // API key untuk upload langsung ke Roblox Open Cloud (disimpan di localStorage).
+  const [apiKey, setApiKeyState] = useState(getApiKey() || "")
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [robloxUserId, setRobloxUserIdState] = useState(getUserId() || "")
+  const [keySaved, setKeySaved] = useState(false)
 
   const fileInputRef = useRef(null)
   const audioPlayerRef = useRef(null)
@@ -240,17 +250,34 @@ export default function EditSong() {
     a.onended = () => setIsPlaying(false)
   }, [])
 
+  // ---- Save API key ----
+  const saveApiKey = useCallback(() => {
+    setApiKey(apiKey)
+    setUserId(robloxUserId)
+    setKeySaved(true)
+    setTimeout(() => setKeySaved(false), 1500)
+  }, [apiKey, robloxUserId])
+
   // ---- Upload single ----
   const uploadItem = useCallback(async (id) => {
     const it = items.find((x) => x.id === id)
     if (!it) return
+    if (!hasApiKey()) {
+      updateItem(id, {
+        status: "error",
+        error: "API Key belum diisi. Buka Settings → paste API Key Roblox.",
+      })
+      return
+    }
     updateItem(id, { status: "uploading", progress: 5, error: null })
     try {
       const blob = it.editedBlob || it.file
       const filename = it.editedFilename || it.name
+      // Upload LANGSUNG ke Roblox Open Cloud dari browser.
+      // response shape: { ok, assetId, playbackUrl, path, ownerId, raw }
       const result = await uploadToRoblox({
-        blob,
-        filename,
+        file: blob,
+        audioName: filename,
         onProgress: (p) => updateItem(id, { progress: Math.max(5, Math.min(95, p)) }),
       })
       updateItem(id, {
@@ -258,7 +285,14 @@ export default function EditSong() {
         progress: 100,
         uploadedAssetId: result.assetId,
         playbackUrl: result.playbackUrl,
+        publicUrl: result.playbackUrl,
+        error: null,
       })
+      // Auto-set userId kalau API response expose
+      if (result.ownerId && !getUserId()) {
+        setUserId(String(result.ownerId))
+        setRobloxUserIdState(String(result.ownerId))
+      }
     } catch (e) {
       updateItem(id, { status: "error", error: e?.message || String(e) })
     }
@@ -453,6 +487,103 @@ export default function EditSong() {
             )}
           </div>
 
+          {currentItem && (currentItem.playbackUrl || currentItem.publicUrl) && (
+            <div className="panel p-4">
+              <div className="card-title flex items-center gap-2">
+                <Link2 size={13} className="text-emerald-300" /> Result
+              </div>
+              <div className="mt-2 space-y-2 text-[11px] font-mono">
+                {currentItem.publicUrl && (
+                  <ResultRow
+                    label="Public URL"
+                    url={currentItem.publicUrl}
+                    onCopy={copyToClipboard}
+                  />
+                )}
+                {currentItem.playbackUrl && (
+                  <ResultRow
+                    label="Roblox Asset"
+                    url={currentItem.playbackUrl}
+                    onCopy={copyToClipboard}
+                  />
+                )}
+                {currentItem.uploadedAssetId && (
+                  <Row k="Asset ID" v={<span className="text-emerald-300">{currentItem.uploadedAssetId}</span>} />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* API key settings untuk Roblox Open Cloud */}
+          <div className="panel p-4">
+            <div className="card-title flex items-center gap-2">
+              <KeyRound size={13} className="text-gold" /> Roblox API Key
+              {hasApiKey() ? (
+                <StatusBadge variant="success" dot>saved</StatusBadge>
+              ) : (
+                <StatusBadge variant="destructive" dot>missing</StatusBadge>
+              )}
+            </div>
+            <p className="mt-2 text-[10px] font-mono text-white/50 leading-relaxed">
+              Disimpan lokal di browser (localStorage). Buat di{" "}
+              <a
+                href={ROBLOX_OPEN_CLOUD.credentialsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-gold hover:underline inline-flex items-center gap-0.5"
+              >
+                create.roblox.com
+                <ExternalLink size={9} />
+              </a>{" "}
+              dengan scope <span className="text-white/70">Audio API</span>.
+            </p>
+
+            <div className="mt-3 space-y-2">
+              <label className="text-[9px] font-mono uppercase text-white/40 tracking-wider block">
+                API Key
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => { setApiKeyState(e.target.value); setKeySaved(false) }}
+                  placeholder="rbx_…"
+                  className="input text-xs flex-1 min-w-0 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey((s) => !s)}
+                  className="btn-ghost btn-xs"
+                  title={showApiKey ? "Hide" : "Show"}
+                >
+                  {showApiKey ? <EyeOff size={11} /> : <Eye size={11} />}
+                </button>
+              </div>
+
+              <label className="text-[9px] font-mono uppercase text-white/40 tracking-wider block pt-1">
+                User ID <span className="text-white/30">(opsional, auto-detect)</span>
+              </label>
+              <input
+                value={robloxUserId}
+                onChange={(e) => { setRobloxUserIdState(e.target.value); setKeySaved(false) }}
+                placeholder="12345678"
+                className="input text-xs font-mono"
+              />
+
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={saveApiKey} className="btn-primary btn-xs">
+                  <KeyRound size={11} /> {keySaved ? "Saved!" : "Save"}
+                </button>
+                <button
+                  onClick={() => { setApiKeyState(""); setRobloxUserIdState(""); setApiKey(""); setUserId("") }}
+                  className="btn-ghost btn-xs"
+                >
+                  <Trash2 size={11} /> Clear
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="panel p-4">
             <div className="card-title flex items-center gap-2">
               <FileAudio size={13} className="text-gold" /> Tips
@@ -460,7 +591,7 @@ export default function EditSong() {
             <ul className="mt-2 space-y-1 text-[11px] font-mono text-white/50 list-disc pl-4">
               <li>Edit multiple files in one go via the per-row <span className="text-gold">Edit</span> action.</li>
               <li>Speed greater than 1x raises pitch (browser behavior); use the <em>Pitch</em> slider to compensate.</li>
-              <li>Uploads are sent to the configured Roblox Open Cloud proxy.</li>
+              <li>Uploads are sent langsung ke Roblox Open Cloud — tidak butuh backend.</li>
               <li>Cover art is extracted from ID3 tags when present.</li>
             </ul>
           </div>
@@ -518,4 +649,46 @@ function Row({ k, v }) {
       <div className="text-white/80 text-right break-all min-w-0 max-w-[60%]">{v}</div>
     </div>
   )
+}
+
+function ResultRow({ label, url, onCopy }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-white/40 uppercase tracking-wider text-[9px]">{label}</div>
+      <div className="flex items-center gap-1.5">
+        <input
+          readOnly
+          value={url}
+          onFocus={(e) => e.target.select()}
+          className="input text-[10px] font-mono flex-1 min-w-0"
+        />
+        <button
+          type="button"
+          onClick={() => onCopy?.(url)}
+          className="btn-ghost btn-xs"
+          title="Copy to clipboard"
+        >
+          <ChevronRight size={11} />
+          <span className="hidden sm:inline">Copy</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+async function copyToClipboard(text) {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement("textarea")
+      ta.value = text
+      ta.style.position = "fixed"
+      ta.style.opacity = "0"
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand("copy")
+      document.body.removeChild(ta)
+    }
+  } catch (_) { /* ignore */ }
 }

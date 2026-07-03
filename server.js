@@ -18,7 +18,8 @@
 import express from 'express'
 import multer from 'multer'
 import fetch from 'node-fetch'
-import { FormData } from 'form-data'
+import formDataPkg from 'form-data'
+const { FormData } = formDataPkg
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
@@ -94,33 +95,93 @@ async function uploadToSynox({ host, filename, mime, buffer }) {
   return { host, url: urlField, raw: json }
 }
 
+// ---------- Util: ambil CSRF token (Roblox 2-step flow) ----------
+// Roblox Create API butuh token CSRF valid. Flow:
+//   1. POST /v1/audio -> dapat 403 + header x-csrf-token.
+//   2. POST https://auth.roblox.com/v1/login (body kosong) dgn X-CSRF-TOKEN tsb.
+//      Server set cookie RBXCSRF, dan kita simpan token.
+//   3. Retry POST /v1/audio dengan X-CSRF-TOKEN baru.
+// Cookie RBXCSCF yang baru kadang tidak dibutuhkan Roblox karena token baru
+// sudah ada di header, namun mengirim cookie lengkap = lebih aman.
+async function robloxProcureCsrf(cookie) {
+  // probe endpoint Create API yang murah: GET /v1/audio tidak ada,
+  // jadi kita panggil probe "noop" lewat POST kosong ke create API.
+  // Strategi yang lebih reliable: panggil auth.roblox.com/v1/login
+  // dengan token placeholder 'fetch' agar Roblox mengembalikan token baru.
+  const url = 'https://auth.roblox.com/v1/login'
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Cookie': `.ROBLOSECURITY=${cookie}`,
+        'User-Agent': ROBLOX_UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Content-Type': 'application/json;charset=UTF-8',
+        'X-CSRF-TOKEN': 'fetch',
+      },
+      body: '',
+    })
+    const token = res.headers.get('x-csrf-token') || ''
+    // kalau masih 403/401, kemungkinan cookie invalid
+    if (res.status === 401 || res.status === 403) {
+      return { token, status: res.status, ok: false }
+    }
+    return { token, status: res.status, ok: true }
+  } catch (e) {
+    return { token: '', status: 0, ok: false, error: e.message }
+  }
+}
+
 // ---------- Util: submit audio ke Roblox Creator Dashboard ----------
-// Endpoint target: https://create.roblox.com/v1/audio
-// Body: multipart/form-data dengan field 'name', 'file', dan 'groupId' (opsional)
+// Implementasi 2-step CSRF: kalau dapat 403, ambil token lalu retry.
 async function submitToRoblox({ name, mime, buffer, cookie }) {
   const url = 'https://create.roblox.com/v1/audio'
-  const form = new FormData()
-  form.append('name', name.slice(0, 50))   // Roblox max 50 char
-  form.append('file', buffer, {
-    filename: name,
-    contentType: mime,
-  })
+  let csrfToken = ''
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
+  const buildForm = () => {
+    const f = new FormData()
+    f.append('name', name.slice(0, 50))
+    f.append('file', buffer, { filename: name, contentType: mime })
+    return f
+  }
+
+  const buildHeaders = () => {
+    const h = {
       'Cookie': `.ROBLOSECURITY=${cookie}`,
       'User-Agent': ROBLOX_UA,
       'Accept': 'application/json, text/plain, */*',
-      'X-CSRF-TOKEN': '1', // akan di-refresh otomatis oleh Roblox
-    },
-    body: form,
-  })
+    }
+    if (csrfToken) h['X-CSRF-TOKEN'] = csrfToken
+    return h
+  }
 
-  const text = await res.text()
-  let json
-  try { json = JSON.parse(text) } catch { json = { raw: text } }
-  return { status: res.status, body: json }
+  async function attempt() {
+    const res = await fetch(url, { method: 'POST', headers: buildHeaders(), body: buildForm() })
+    const text = await res.text()
+    let json
+    try { json = JSON.parse(text) } catch { json = { raw: text } }
+    return { res, json, text }
+  }
+
+  // attempt 1
+  let { res, json, text } = await attempt()
+  if (res.status === 403) {
+    const token = res.headers.get('x-csrf-token')
+    if (token) {
+      csrfToken = token
+      // retry sekali
+      ;({ res, json, text } = await attempt())
+    } else {
+      // fallback: procure token dari auth endpoint
+      const proc = await robloxProcureCsrf(cookie)
+      if (proc.ok && proc.token) {
+        csrfToken = proc.token
+        ;({ res, json, text } = await attempt())
+      }
+    }
+  }
+
+  return { status: res.status, body: json, rawText: text }
 }
 
 // ---------- API: /api/upload-roblox ----------

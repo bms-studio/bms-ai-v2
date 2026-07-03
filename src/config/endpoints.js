@@ -6,6 +6,28 @@ export const API_URL = (import.meta?.env?.VITE_API_URL || '').replace(/\/+$/, ''
 export const SYNOX_BASE = 'https://api.synoxcloud.xyz'
 export const XYLO_BASE  = 'https://xyloapi.qzz.io'
 
+// Roblox Open Cloud: dipakai untuk upload audio langsung dari browser.
+// API Key di-generate user di https://create.roblox.com/dashboard/credentials
+// dengan scope "Audio API". Endpoint apis.roblox.com support CORS, jadi TIDAK
+// butuh backend proxy & TIDAK butuh .ROBLOSECURITY cookie.
+//
+// Endpoint: POST https://apis.roblox.com/assets/v1/assets
+//   Header : x-api-key: <KEY>
+//   Body   : multipart/form-data
+//     - request     : JSON.stringify({ displayName, assetType: "Audio",
+//                                     description, creationContext: { creator: { userId } } })
+//     - fileContent : binary audio
+//   Response: { path: "assets/<assetId>", assetId, ... }
+export const ROBLOX_OPEN_CLOUD = {
+  audioInsert: 'https://apis.roblox.com/assets/v1/assets',
+  audioMetadata: (id) => `https://apis.roblox.com/assets/v1/assets/${id}`,
+  credentialsUrl: 'https://create.roblox.com/dashboard/credentials',
+  robloxLimits: {
+    maxSizeMB: 20,
+    maxDurationSec: 360,
+  },
+}
+
 export const AI_MODELS = [
   { id: 'claude-opus-4.8',        name: 'Claude Opus 4.8',      provider: 'Anthropic', category: 'Claude',    accent: '#f59e0b' },
   { id: 'claude-opus-4.7',        name: 'Claude Opus 4.7',      provider: 'Anthropic', category: 'Claude',    accent: '#fb7185' },
