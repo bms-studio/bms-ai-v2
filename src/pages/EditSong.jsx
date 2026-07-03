@@ -1,521 +1,521 @@
-import { useEffect, useRef, useState } from "react"
+/* ============================================================
+   Auralis AI v2 - Edit Song page
+   Upload / drop multiple audio files, edit pitch/speed/trim,
+   then upload to Roblox as audio assets.
+   ============================================================ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  Music,
-  Upload,
-  Link2,
-  Copy,
-  ExternalLink,
-  CheckCircle2,
-  AlertTriangle,
-  KeyRound,
-  FileAudio,
-  Eye,
-  EyeOff,
-  RotateCcw,
+  Upload, Plus, Wand2, UploadCloud, Trash2, Music2,
+  X, ChevronRight, Loader2, Link2, Sparkles, FileAudio
 } from "lucide-react"
+import { SectionHead, EmptyState, ErrorBox } from "../components/UI.jsx"
 import StatusBadge from "../components/StatusBadge.jsx"
-import { SectionHead, ErrorBox } from "../components/UI.jsx"
-import { useToast } from "../state/ToastContext.jsx"
-import { EDIT_SONG } from "../config/endpoints.js"
-import { fileToURL, copyText } from "../lib/utils.js"
-import {
-  validateRobloxApiKey,
-  validateAudioFile,
-  uploadAudioToRoblox,
-  pollAudioOperation,
-  buildSynoxDownloadUrl,
-  pickAudioFromSynox,
-} from "../lib/roblox.js"
+import EditorModal from "../components/EditorModal.jsx"
+import QueueItem from "../components/EditSong/QueueItem.jsx"
+import { readID3Cover, readID3Basic } from "../lib/metadata.js"
+import { probeAudio, getBlobDuration } from "../lib/audioProcessor.js"
+import { uploadToRoblox } from "../lib/uploadApi.js"
+import { fmtBytes } from "../lib/utils.js"
 
-const STORAGE = {
-  key: "bms_auralis_roblox_apikey",
-  userId: "bms_auralis_roblox_userid",
-}
-
-function fmtSize(mb) {
-  if (mb == null) return "-"
-  return `${mb.toFixed(2)} MB`
-}
-
-function fmtDur(sec) {
-  if (sec == null) return "-"
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m}:${String(s).padStart(2, "0")}`
-}
+let __id = 0
+const nextId = () => `q_${Date.now()}_${++__id}`
 
 export default function EditSong() {
-  const toast = useToast()
+  const [items, setItems] = useState([])          // queue items
+  const [current, setCurrent] = useState(null)    // selected item id
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorSource, setEditorSource] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [bulkUploading, setBulkUploading] = useState(false)
+  const [remoteUrl, setRemoteUrl] = useState("")
+  const [globalError, setGlobalError] = useState("")
 
-  // Persisted settings
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE.key) || "")
-  const [userId, setUserId] = useState(() => localStorage.getItem(STORAGE.userId) || "")
-  const [showKey, setShowKey] = useState(false)
-  const [keyValid, setKeyValid] = useState(null) // null | true | false
-  const [keyError, setKeyError] = useState("")
+  const fileInputRef = useRef(null)
+  const audioPlayerRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
 
-  // Source: file or url
-  const [sourceTab, setSourceTab] = useState("file") // "file" | "url"
-  const [file, setFile] = useState(null)
-  const [previewUrl, setPreviewUrl] = useState("")
-  const [fileMeta, setFileMeta] = useState(null) // { sizeMB, duration }
-  const [targetUrl, setTargetUrl] = useState("")
+  const currentItem = useMemo(
+    () => items.find((x) => x.id === current) || null,
+    [items, current]
+  )
 
-  // Asset meta
-  const [displayName, setDisplayName] = useState("")
-  const [description, setDescription] = useState("")
-
-  // Pipeline state: idle | validating | uploading | moderating | success | failed
-  const [stage, setStage] = useState("idle")
-  const [stageMsg, setStageMsg] = useState("")
-  const [progress, setProgress] = useState(0)
-  const [error, setError] = useState("")
-  const [result, setResult] = useState(null) // { assetId, url, filename }
-
-  const cancelRef = useRef({ cancelled: false })
-
-  // Persist settings
-  useEffect(() => { localStorage.setItem(STORAGE.key, apiKey) }, [apiKey])
-  useEffect(() => { localStorage.setItem(STORAGE.userId, userId) }, [userId])
-
-  // File preview lifecycle
+  // Cleanup object URLs on unmount
   useEffect(() => {
-    if (!file) { setPreviewUrl(""); setFileMeta(null); return
+    return () => {
+      items.forEach((it) => {
+        if (it.previewUrl && it.kind === "file") {
+          try { URL.revokeObjectURL(it.previewUrl) } catch (_) {}
+        }
+      })
     }
-    const url = fileToURL(file)
-    setPreviewUrl(url)
-    return () => { try { URL.revokeObjectURL(url) } catch (_) {} }
-  }, [file])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Whenever the user changes the file, sync the default displayName
-  useEffect(() => {
-    if (file && !displayName) {
-      setDisplayName(file.name.replace(/\.[^.]+$/, "").slice(0, 50))
-    }
-  }, [file, displayName])
+  // ---- Queue management ----
+  const updateItem = useCallback((id, patch) => {
+    setItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)))
+  }, [])
 
-  // Reset pipeline on input change
-  useEffect(() => {
-    setStage("idle"); setStageMsg(""); setProgress(0)
-    setError(""); setResult(null)
-    cancelRef.current.cancelled = false
-  }, [file, targetUrl, sourceTab])
+  const removeItem = useCallback((id) => {
+    setItems((arr) => {
+      const it = arr.find((x) => x.id === id)
+      if (it?.previewUrl && it.kind === "file") {
+        try { URL.revokeObjectURL(it.previewUrl) } catch (_) {}
+      }
+      return arr.filter((x) => x.id !== id)
+    })
+    setCurrent((c) => (c === id ? null : c))
+  }, [])
 
-  // ---------- handlers ----------
+  const clearDone = useCallback(() => {
+    setItems((arr) => arr.filter((x) => x.status !== "done"))
+  }, [])
 
-  function onPick(f) { setFile(f || null) }
-
-  async function checkKey() {
-    if (!apiKey.trim()) {
-      setKeyValid(false); setKeyError("API key is empty.")
+  // ---- Add files ----
+  const ingestFiles = useCallback(async (fileList) => {
+    setGlobalError("")
+    const list = Array.from(fileList || []).filter((f) =>
+      /^audio\//.test(f.type) || /\.(mp3|wav|ogg|flac|m4a|aac|webm)$/i.test(f.name)
+    )
+    if (!list.length) {
+      setGlobalError("No audio files detected. Supported: mp3, wav, ogg, flac, m4a, aac, webm.")
       return
     }
-    setKeyValid(null); setKeyError("")
-    const r = await validateRobloxApiKey(apiKey)
-    if (r.ok) {
-      setKeyValid(true); toast.success("API key valid")
-    } else {
-      setKeyValid(false); setKeyError(r.error || "Invalid")
-      toast.error("API key invalid", r.error || "Check your key")
+    const newItems = []
+    for (const f of list) {
+      const url = URL.createObjectURL(f)
+      let meta = { title: f.name.replace(/\.[^.]+$/, ""), artist: "Unknown" }
+      let coverUrl = ""
+      try {
+        const tag = await readID3Basic(f)
+        if (tag?.title) meta.title = tag.title
+        if (tag?.artist) meta.artist = tag.artist
+        const cov = await readID3Cover(f)
+        if (cov) coverUrl = URL.createObjectURL(new Blob([cov.data], { type: cov.type || "image/jpeg" }))
+      } catch (_) { /* ignore */ }
+      let duration = 0
+      try { duration = await getBlobDuration(f) } catch (_) {}
+      newItems.push({
+        id: nextId(),
+        kind: "file",
+        name: meta.title,
+        file: f,
+        previewUrl: url,
+        coverUrl,
+        artist: meta.artist,
+        duration,
+        size: f.size,
+        status: "ready",
+        progress: 0,
+        edited: false,
+        editMeta: null,
+        editedBlob: null,
+        editedFilename: null,
+        uploadedAssetId: null,
+        playbackUrl: null,
+        error: null,
+      })
     }
-  }
+    setItems((arr) => [...newItems, ...arr])
+    if (!current && newItems.length) setCurrent(newItems[0].id)
+  }, [current])
 
-  function reset() {
-    cancelRef.current.cancelled = true
-    setStage("idle"); setStageMsg(""); setProgress(0)
-    setError(""); setResult(null)
-  }
-
-  async function ensureFile() {
-    if (sourceTab === "file") {
-      if (!file) throw new Error("Pick an audio file first.")
-      const v = await validateAudioFile(file)
-      if (!v.ok) throw new Error(v.reason)
-      setFileMeta({ sizeMB: v.sizeMB, duration: v.duration })
-      return file
-    }
-    // url source
-    if (!targetUrl.trim()) throw new Error("Paste a target URL first.")
-    setStage("downloading"); setStageMsg("Resolving audio URL...")
-    const dl = await fetch(buildSynoxDownloadUrl(targetUrl.trim()))
-    if (!dl.ok) throw new Error(`Synox ${dl.status}: ${await dl.text().catch(() => "")}`)
-    const j = await dl.json()
-    const picked = pickAudioFromSynox(j)
-    if (!picked) throw new Error("No downloadable audio URL found in the response.")
-    setStage("downloading"); setStageMsg("Downloading audio...")
-    const r = await fetch(picked.url)
-    if (!r.ok) throw new Error(`Failed to fetch audio: HTTP ${r.status}`)
-    const blob = await r.blob()
-    const mime = blob.type || "audio/mpeg"
-    const filename = picked.filename || "audio.mp3"
-    const f = new File([blob], filename, { type: mime })
-    const v = await validateAudioFile(f)
-    if (!v.ok) throw new Error(v.reason)
-    setFileMeta({ sizeMB: v.sizeMB, duration: v.duration })
-    setFile(f)
-    if (!displayName) {
-      setDisplayName(filename.replace(/\.[^.]+$/, "").slice(0, 50))
-    }
-    return f
-  }
-
-  async function submit() {
-    setError(""); setResult(null); setProgress(0)
-    cancelRef.current = { cancelled: false }
-    if (!apiKey.trim()) { setError("Roblox Open Cloud API key is required."); return }
-    if (!userId.trim()) { setError("Creator UserId is required."); return }
-    if (!displayName.trim()) { setError("Display name is required."); return }
+  // ---- Add remote URL ----
+  const ingestRemoteUrl = useCallback(async () => {
+    const url = remoteUrl.trim()
+    if (!url) return
+    setGlobalError("")
     try {
-      // 1) ensure file
-      setStage("validating"); setStageMsg("Checking file...")
-      const f = await ensureFile()
-      if (cancelRef.current.cancelled) return
-
-      // 2) upload
-      setStage("uploading"); setStageMsg("Uploading to Roblox...")
-      const up = await uploadAudioToRoblox({
-        apiKey, file: f, displayName, description, userId: userId.trim(),
-      })
-      if (cancelRef.current.cancelled) return
-
-      if (!up.needsPolling && up.assetId) {
-        setProgress(100)
-        setStage("success"); setStageMsg("Approved instantly.")
-        setResult({ assetId: up.assetId, filename: f.name })
-        toast.success("Audio approved", `ID ${up.assetId}`)
-        return
-      }
-
-      // 3) poll moderation
-      setStage("moderating"); setStageMsg("Waiting for Roblox moderation...")
-      const poll = await pollAudioOperation(apiKey, up.operationId, {
-        timeoutMs: EDIT_SONG.pollTimeoutMs,
-        intervalMs: EDIT_SONG.pollIntervalMs,
-        onTick: ({ state }) => {
-          if (cancelRef.current.cancelled) return
-          // small UI feedback even when not done
-          setStageMsg(`Moderation: ${state}...`)
+      const res = await fetch(url, { method: "HEAD" }).catch(() => null)
+      const len = Number(res?.headers?.get?.("content-length") || 0) || undefined
+      const name = (() => {
+        try { return decodeURIComponent(new URL(url).pathname.split("/").pop() || "remote") }
+        catch { return "remote" }
+      })().slice(-60)
+      setItems((arr) => [
+        {
+          id: nextId(),
+          kind: "url",
+          name,
+          url,
+          previewUrl: url,
+          coverUrl: "",
+          artist: "Remote",
+          duration: 0,
+          size: len,
+          status: "ready",
+          progress: 0,
+          edited: false,
+          editMeta: null,
+          editedBlob: null,
+          editedFilename: null,
+          uploadedAssetId: null,
+          playbackUrl: null,
+          error: null,
         },
-      })
-      if (cancelRef.current.cancelled) return
-      if (poll.done && poll.assetId) {
-        setProgress(100)
-        setStage("success"); setStageMsg("Approved!")
-        setResult({ assetId: poll.assetId, filename: f.name })
-        toast.success("Audio approved", `ID ${poll.assetId}`)
-      } else if (poll.done && poll.failed) {
-        setStage("failed"); setError(poll.error || "Operation failed.")
-        toast.error("Audio rejected", poll.error || "Operation failed.")
-      } else {
-        setStage("failed"); setError("Timed out waiting for Roblox moderation.")
-        toast.error("Timeout", "Roblox moderation took too long.")
-      }
-    } catch (err) {
-      if (cancelRef.current.cancelled) return
-      setStage("failed"); setError(err.message || String(err))
-      toast.error("Upload failed", err.message || "error")
+        ...arr,
+      ])
+      setRemoteUrl("")
+    } catch (e) {
+      setGlobalError(`Could not enqueue remote URL: ${e?.message || e}`)
     }
+  }, [remoteUrl])
+
+  // ---- Drag and drop ----
+  function onDragOver(e) {
+    e.preventDefault()
+    setDragOver(true)
+  }
+  function onDragLeave() { setDragOver(false) }
+  function onDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    if (e.dataTransfer?.files?.length) ingestFiles(e.dataTransfer.files)
   }
 
-  const limits = EDIT_SONG.robloxLimits
-  const canSubmit =
-    apiKey.trim() && userId.trim() && displayName.trim() &&
-    (sourceTab === "file" ? !!file : !!targetUrl.trim()) &&
-    !["uploading", "moderating", "downloading", "validating"].includes(stage)
+  // ---- Edit modal ----
+  const openEditor = useCallback((id) => {
+    const it = items.find((x) => x.id === id)
+    if (!it) return
+    setEditorSource({
+      kind: it.editedBlob ? "file" : it.kind,
+      file: it.editedBlob || it.file,
+      url: it.editedBlob ? null : it.url,
+      name: it.name,
+    })
+    setEditorOpen(true)
+  }, [items])
 
-  const stageBadge = (() => {
-    switch (stage) {
-      case "uploading": return <StatusBadge variant="info" dot>Uploading</StatusBadge>
-      case "downloading": return <StatusBadge variant="info" dot>Downloading</StatusBadge>
-      case "validating": return <StatusBadge variant="info" dot>Validating</StatusBadge>
-      case "moderating": return <StatusBadge variant="info" dot>Moderation</StatusBadge>
-      case "success": return <StatusBadge variant="success" dot>Approved</StatusBadge>
-      case "failed": return <StatusBadge variant="destructive" dot>Failed</StatusBadge>
-      default: return <StatusBadge variant="outline">Idle</StatusBadge>
+  const applyEditForCurrent = useCallback(({ blob, filename, meta }) => {
+    if (!currentItem) return
+    const id = currentItem.id
+    const previewUrl = URL.createObjectURL(blob)
+    getBlobDuration(blob).then((d) => {
+      updateItem(id, {
+        edited: true,
+        editMeta: meta,
+        editedBlob: blob,
+        editedFilename: filename,
+        previewUrl,
+        duration: d || meta?.duration,
+        status: "ready",
+        error: null,
+      })
+    }).catch(() => {
+      updateItem(id, {
+        edited: true,
+        editMeta: meta,
+        editedBlob: blob,
+        editedFilename: filename,
+        previewUrl,
+        status: "ready",
+        error: null,
+      })
+    })
+    setEditorOpen(false)
+  }, [currentItem, updateItem])
+
+  // ---- Playback preview ----
+  const togglePlay = useCallback((id) => {
+    const it = items.find((x) => x.id === id)
+    if (!it) return
+    if (current !== id) {
+      setCurrent(id)
+      setTimeout(() => {
+        const a = audioPlayerRef.current
+        if (a) { a.src = it.previewUrl; a.play().catch(() => {}); setIsPlaying(true) }
+      }, 30)
+      return
     }
-  })()
+    const a = audioPlayerRef.current
+    if (!a) return
+    if (a.paused) { a.play().catch(() => {}); setIsPlaying(true) }
+    else { a.pause(); setIsPlaying(false) }
+  }, [current, items])
+
+  useEffect(() => {
+    const a = audioPlayerRef.current
+    if (!a) return
+    a.onended = () => setIsPlaying(false)
+  }, [])
+
+  // ---- Upload single ----
+  const uploadItem = useCallback(async (id) => {
+    const it = items.find((x) => x.id === id)
+    if (!it) return
+    updateItem(id, { status: "uploading", progress: 5, error: null })
+    try {
+      const blob = it.editedBlob || it.file
+      const filename = it.editedFilename || it.name
+      const result = await uploadToRoblox({
+        blob,
+        filename,
+        onProgress: (p) => updateItem(id, { progress: Math.max(5, Math.min(95, p)) }),
+      })
+      updateItem(id, {
+        status: "done",
+        progress: 100,
+        uploadedAssetId: result.assetId,
+        playbackUrl: result.playbackUrl,
+      })
+    } catch (e) {
+      updateItem(id, { status: "error", error: e?.message || String(e) })
+    }
+  }, [items, updateItem])
+
+  // ---- Upload all ready ----
+  const uploadAllReady = useCallback(async () => {
+    const targets = items.filter((x) => x.status === "ready")
+    if (!targets.length) return
+    setBulkUploading(true)
+    for (const t of targets) {
+      // eslint-disable-next-line no-await-in-loop
+      await uploadItem(t.id)
+    }
+    setBulkUploading(false)
+  }, [items, uploadItem])
+
+  // ---- Stats ----
+  const stats = useMemo(() => {
+    const total = items.length
+    const ready = items.filter((x) => x.status === "ready").length
+    const done = items.filter((x) => x.status === "done").length
+    const errs = items.filter((x) => x.status === "error").length
+    const busy = items.some((x) => ["uploading", "rendering"].includes(x.status))
+    return { total, ready, done, errs, busy }
+  }, [items])
 
   return (
-    <div className="px-4 md:px-8 py-8 max-w-7xl mx-auto">
+    <div className="page-pad" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <SectionHead
-        kicker="// roblox"
+        kicker="// studio"
         title="Edit Song"
-        sub={`Upload audio to Roblox audio library via Open Cloud (max ${limits.maxSizeMB}MB / ${limits.maxDurationSec}s).`}
+        sub="Drop audio files, tweak pitch / speed / volume / trim, then upload to Roblox as audio assets."
       >
-        {stageBadge}
+        <StatusBadge variant="gold" dot>Beta</StatusBadge>
+        <button
+          className="btn-primary btn-sm"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={bulkUploading}
+        >
+          <Plus size={12} /> Add files
+        </button>
+        <input
+          ref={fileInputRef} type="file" accept="audio/*" multiple className="hidden"
+          onChange={(e) => e.target.files && ingestFiles(e.target.files)}
+        />
+        {stats.ready > 0 && (
+          <button
+            className="btn-ghost btn-sm"
+            onClick={uploadAllReady}
+            disabled={bulkUploading}
+            title="Upload every ready item"
+          >
+            <UploadCloud size={12} /> Upload all ({stats.ready})
+          </button>
+        )}
+        {stats.done > 0 && (
+          <button className="btn-ghost btn-sm" onClick={clearDone} title="Remove uploaded items">
+            <Trash2 size={12} /> Clear done
+          </button>
+        )}
       </SectionHead>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* LEFT: input */}
-        <div className="md:col-span-1 space-y-4">
-          {/* Tabs */}
-          <div className="panel p-1 flex">
-            {[
-              { id: "file", label: "Local File", icon: FileAudio },
-              { id: "url", label: "From URL", icon: Link2 },
-            ].map(t => {
-              const Icon = t.icon
-              const active = sourceTab === t.id
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setSourceTab(t.id)}
-                  className={
-                    "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-mono uppercase tracking-wider rounded transition-colors " +
-                    (active
-                      ? "bg-gold/10 text-gold"
-                      : "text-white/50 hover:text-white hover:bg-white/5")
-                  }
-                >
-                  <Icon size={12} />
-                  {t.label}
-                </button>
-              )
-            })}
-          </div>
+      {globalError && (
+        <div className="mb-4">
+          <ErrorBox title="Could not import" message={globalError} />
+        </div>
+      )}
 
-          {/* File picker */}
-          {sourceTab === "file" && (
-            <label className="block">
-              <div className="card-title mb-1.5">Audio file</div>
-              <div className="panel p-3 border-dashed hover:border-gold/40 transition-colors cursor-pointer relative min-h-[180px] flex items-center justify-center">
-                <input
-                  type="file"
-                  accept={EDIT_SONG.formats.map(f => f.mime).join(",") + ",.mp3,.ogg,.wav,.flac"}
-                  onChange={(e) => onPick(e.target.files?.[0] || null)}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                />
-                {previewUrl ? (
-                  <div className="w-full">
-                    <div className="flex items-center gap-2 mb-2 text-[11px] font-mono text-white/60 break-all">
-                      <FileAudio size={12} className="text-gold shrink-0" />
-                      {file?.name}
-                    </div>
-                    <audio src={previewUrl} controls className="w-full" />
-                    <div className="text-[10px] font-mono text-white/40 mt-2 flex justify-between">
-                      <span>{fmtSize(fileMeta?.sizeMB)}</span>
-                      <span>{fmtDur(fileMeta?.duration)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-6">
-                    <Upload size={24} className="text-gold mx-auto mb-2" />
-                    <div className="font-mono text-sm text-white">Drop or click</div>
-                    <div className="text-[10px] text-white/40 mt-1 font-mono">
-                      MP3 / OGG / WAV / FLAC
-                    </div>
-                  </div>
-                )}
-              </div>
-            </label>
-          )}
-
-          {/* URL picker */}
-          {sourceTab === "url" && (
-            <div>
-              <div className="card-title mb-1.5">Target URL</div>
-              <div className="panel p-3">
-                <input
-                  type="url"
-                  value={targetUrl}
-                  onChange={(e) => setTargetUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className="w-full bg-transparent text-sm font-mono text-white placeholder-white/30 outline-none"
-                />
-                <div className="text-[10px] font-mono text-white/40 mt-2">
-                  Resolves via {EDIT_SONG.downloader.name}
-                </div>
-              </div>
+      {/* Drop zone + URL import */}
+      <div
+        className={`mb-5 border-2 border-dashed p-6 transition-colors ${
+          dragOver ? "border-gold bg-gold/5" : "border-white/10 bg-jet/30"
+        }`}
+        onClick={() => fileInputRef.current?.click()}
+        role="button"
+      >
+        <div className="flex items-center gap-3">
+          <UploadCloud className="text-gold" size={20} />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-white text-sm">
+              Drop audio files here, or click to browse
             </div>
-          )}
-
-          {/* Display name + description */}
-          <div>
-            <div className="card-title mb-1.5">Display name</div>
-            <div className="panel p-3">
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="My awesome song"
-                maxLength={50}
-                className="w-full bg-transparent text-sm font-mono text-white placeholder-white/30 outline-none"
-              />
-              <div className="text-[10px] font-mono text-white/30 mt-1 text-right">
-                {displayName.length}/50
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="card-title mb-1.5">Description (optional)</div>
-            <div className="panel p-3">
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional caption..."
-                maxLength={200}
-                rows={2}
-                className="w-full bg-transparent text-xs font-mono text-white placeholder-white/30 outline-none resize-none"
-              />
+            <div className="text-[11px] font-mono text-white/40">
+              mp3 · wav · ogg · flac · m4a · aac · webm — multiple files supported
             </div>
           </div>
         </div>
 
-        {/* RIGHT: settings + result */}
-        <div className="md:col-span-2 space-y-4">
-          {/* Credentials */}
+        <div
+          className="mt-4 flex items-center gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Link2 size={14} className="text-white/40" />
+          <input
+            value={remoteUrl}
+            onChange={(e) => setRemoteUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && ingestRemoteUrl()}
+            placeholder="…or paste a remote audio URL (https://…)"
+            className="input flex-1 text-xs"
+          />
+          <button onClick={ingestRemoteUrl} disabled={!remoteUrl.trim()} className="btn-ghost btn-sm">
+            <Plus size={11} /> Add URL
+          </button>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+        <Stat label="Total" value={stats.total} />
+        <Stat label="Ready" value={stats.ready} accent="gold" />
+        <Stat label="Uploaded" value={stats.done} accent="emerald" />
+        <Stat label="Failed" value={stats.errs} accent="red" />
+      </div>
+
+      {/* Main grid: queue + detail */}
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* Queue list */}
+        <div className="lg:col-span-2 space-y-2">
+          {items.length === 0 ? (
+            <EmptyState
+              title="Queue is empty"
+              sub="Drop some audio files above to start editing and uploading."
+              action={null}
+            />
+          ) : (
+            items.map((it, i) => (
+              <QueueItem
+                key={it.id}
+                item={it}
+                index={i}
+                isCurrent={it.id === current}
+                isPlaying={isPlaying && it.id === current}
+                onSelect={setCurrent}
+                onEdit={openEditor}
+                onRemove={removeItem}
+                onUpload={uploadItem}
+                onTogglePlay={togglePlay}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Detail panel */}
+        <div className="space-y-3">
           <div className="panel p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <KeyRound size={14} className="text-gold" />
-              <div className="card-title !mb-0">Roblox Open Cloud credentials</div>
+            <div className="card-title flex items-center gap-2">
+              <Sparkles size={13} className="text-gold" /> Inspector
             </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <div className="text-[10px] font-mono uppercase text-white/40 mb-1">API Key</div>
-                <div className="panel p-2 flex items-center gap-1">
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => { setApiKey(e.target.value); setKeyValid(null) }}
-                    placeholder="rbx_..."
-                    className="flex-1 bg-transparent text-xs font-mono text-white placeholder-white/30 outline-none"
-                  />
-                  <button onClick={() => setShowKey(s => !s)} className="btn-ghost btn-xs">
-                    {showKey ? <EyeOff size={11} /> : <Eye size={11} />}
+            {!currentItem ? (
+              <div className="text-xs font-mono text-white/40 mt-2">
+                Select a track to inspect.
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2 text-xs font-mono">
+                <Row k="Name" v={currentItem.name} />
+                <Row k="Artist" v={currentItem.artist || "—"} />
+                <Row k="Source" v={currentItem.kind === "url" ? "remote" : "local file"} />
+                <Row k="Size" v={fmtBytes(currentItem.size || 0)} />
+                <Row k="Duration" v={`${(currentItem.duration || 0).toFixed(2)}s`} />
+                <Row k="Status" v={
+                  <StatusBadge variant={
+                    currentItem.status === "done" ? "success" :
+                    currentItem.status === "error" ? "destructive" :
+                    ["uploading", "rendering"].includes(currentItem.status) ? "gold" : "outline"
+                  } dot>{currentItem.status}</StatusBadge>
+                } />
+                {currentItem.edited && (
+                  <Row k="Edit" v={`${currentItem.editMeta?.speed?.toFixed(2)}x · pitch ${
+                    currentItem.editMeta?.pitch >= 0 ? "+" : ""
+                  }${currentItem.editMeta?.pitch || 0}st`} />
+                )}
+                {currentItem.uploadedAssetId && (
+                  <Row k="Asset" v={<span className="text-emerald-300">{currentItem.uploadedAssetId}</span>} />
+                )}
+                <div className="pt-3 flex flex-wrap items-center gap-1.5">
+                  <button onClick={() => openEditor(currentItem.id)} className="btn-primary btn-xs">
+                    <Wand2 size={11} /> Edit
+                  </button>
+                  <button
+                    onClick={() => uploadItem(currentItem.id)}
+                    disabled={currentItem.status === "uploading" || currentItem.status === "rendering" || currentItem.status === "done"}
+                    className="btn-ghost btn-xs"
+                  >
+                    <Upload size={11} /> {currentItem.status === "done" ? "Uploaded" : "Upload"}
+                  </button>
+                  <button onClick={() => togglePlay(currentItem.id)} className="btn-ghost btn-xs">
+                    <Music2 size={11} /> Preview
                   </button>
                 </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <button onClick={checkKey} className="btn-ghost btn-xs" disabled={!apiKey.trim()}>
-                    Test key
-                  </button>
-                  {keyValid === true && (
-                    <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 size={10} /> Valid
-                    </span>
-                  )}
-                  {keyValid === false && (
-                    <span className="text-[10px] font-mono text-destructive flex items-center gap-1">
-                      <AlertTriangle size={10} /> {keyError || "Invalid"}
-                    </span>
-                  )}
-                </div>
               </div>
-              <div>
-                <div className="text-[10px] font-mono uppercase text-white/40 mb-1">Creator UserId</div>
-                <div className="panel p-2">
-                  <input
-                    type="text"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder="12345678"
-                    className="w-full bg-transparent text-xs font-mono text-white placeholder-white/30 outline-none"
-                  />
-                </div>
-                <div className="text-[10px] font-mono text-white/30 mt-1">
-                  Numeric Roblox user ID of the audio owner.
-                </div>
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Pipeline panel */}
           <div className="panel p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="card-title !mb-0 flex items-center gap-2">
-                <Music size={14} className="text-gold" />
-                Upload pipeline
-              </div>
-              {stage !== "idle" && stage !== "success" && (
-                <button onClick={reset} className="btn-ghost btn-xs">
-                  <RotateCcw size={10} /> Reset
-                </button>
-              )}
+            <div className="card-title flex items-center gap-2">
+              <FileAudio size={13} className="text-gold" /> Tips
             </div>
-
-            {/* Progress */}
-            {["uploading", "moderating", "downloading", "validating"].includes(stage) && (
-              <div className="mb-3">
-                <div className="h-1.5 bg-white/5 overflow-hidden">
-                  <div
-                    className="h-full bg-gold transition-all"
-                    style={{
-                      width:
-                        stage === "uploading" ? "55%"
-                        : stage === "moderating" ? "80%"
-                        : stage === "downloading" ? "30%"
-                        : "10%",
-                    }}
-                  />
-                </div>
-                <div className="text-[10px] font-mono text-white/50 mt-1">{stageMsg}</div>
-              </div>
-            )}
-
-            {error && <ErrorBox>{error}</ErrorBox>}
-
-            {/* Result */}
-            {result && (
-              <div className="border border-emerald-500/30 bg-emerald-500/5 p-3">
-                <div className="flex items-center gap-2 mb-2 text-emerald-400 text-xs font-mono">
-                  <CheckCircle2 size={12} />
-                  Audio approved & uploaded
-                </div>
-                <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Asset ID</div>
-                <div className="font-mono text-sm text-white mb-2 break-all">{result.assetId}</div>
-                <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider mb-1">Library URL</div>
-                <div className="font-mono text-[11px] text-white/70 break-all mb-3">
-                  {`https://www.roblox.com/library/${result.assetId}`}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => copyText(`https://www.roblox.com/library/${result.assetId}`)}
-                    className="btn-primary btn-sm"
-                  >
-                    <Copy size={11} /> Copy URL
-                  </button>
-                  <button
-                    onClick={() => copyText(result.assetId)}
-                    className="btn-ghost btn-sm"
-                  >
-                    <Copy size={11} /> Copy ID
-                  </button>
-                  <a
-                    href={`https://www.roblox.com/library/${result.assetId}`}
-                    target="_blank" rel="noreferrer"
-                    className="btn-ghost btn-sm"
-                  >
-                    <ExternalLink size={11} /> Open on Roblox
-                  </a>
-                  <button onClick={reset} className="btn-ghost btn-sm">
-                    <Upload size={11} /> New upload
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Submit */}
-            {!result && (
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={submit}
-                  disabled={!canSubmit}
-                  className="btn-primary btn-lg"
-                >
-                  <Upload size={14} />
-                  {stage === "uploading" ? "Uploading..."
-                    : stage === "moderating" ? "Waiting moderation..."
-                    : stage === "downloading" ? "Downloading..."
-                    : "Upload to Roblox"}
-                </button>
-                <div className="text-[10px] font-mono text-white/40">
-                  Limits: {EDIT_SONG.formats.map(f => f.label).join(" / ")} - up to {limits.maxSizeMB}MB / {limits.maxDurationSec}s.
-                </div>
-              </div>
-            )}
+            <ul className="mt-2 space-y-1 text-[11px] font-mono text-white/50 list-disc pl-4">
+              <li>Edit multiple files in one go via the per-row <span className="text-gold">Edit</span> action.</li>
+              <li>Speed greater than 1x raises pitch (browser behavior); use the <em>Pitch</em> slider to compensate.</li>
+              <li>Uploads are sent to the configured Roblox Open Cloud proxy.</li>
+              <li>Cover art is extracted from ID3 tags when present.</li>
+            </ul>
           </div>
         </div>
       </div>
+
+      {/* Hidden audio element used for preview */}
+      <audio
+        ref={audioPlayerRef}
+        src={currentItem?.previewUrl || ""}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        className="hidden"
+      />
+
+      {/* Editor modal */}
+      <EditorModal
+        open={editorOpen}
+        source={editorSource}
+        onClose={() => setEditorOpen(false)}
+        onApply={applyEditForCurrent}
+      />
+
+      {dragOver && (
+        <div className="fixed inset-0 z-40 pointer-events-none border-2 border-gold/40 m-4">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-jet/90 border border-gold/40 px-4 py-2 font-mono text-xs text-gold">
+              Drop to add audio files
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Stat({ label, value, accent }) {
+  const cls =
+    accent === "gold" ? "text-gold" :
+    accent === "emerald" ? "text-emerald-300" :
+    accent === "red" ? "text-red-300" :
+    "text-white"
+  return (
+    <div className="panel p-3">
+      <div className="text-[9px] font-mono uppercase text-white/40 tracking-wider">{label}</div>
+      <div className={`text-2xl font-bold ${cls}`}>{value}</div>
+    </div>
+  )
+}
+
+function Row({ k, v }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="text-white/40 uppercase tracking-wider text-[9px]">{k}</div>
+      <div className="text-white/80 text-right break-all min-w-0 max-w-[60%]">{v}</div>
     </div>
   )
 }

@@ -1,3 +1,8 @@
+// Base URL backend /api. Di dev (vite + express middleware) dan prod
+// (express server.js), endpoint API berada di same-origin.
+// Bisa di-override via env VITE_API_URL di .env.
+export const API_URL = (import.meta?.env?.VITE_API_URL || '').replace(/\/+$/, '')
+
 export const SYNOX_BASE = 'https://api.synoxcloud.xyz'
 export const XYLO_BASE  = 'https://xyloapi.qzz.io'
 

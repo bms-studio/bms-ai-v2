@@ -59,15 +59,22 @@ export default function Sidebar() {
                     to={it.to}
                     end={it.to === "/"}
                     className={({ isActive }) => cn(
-                      "group flex items-center gap-3 px-3 py-2 text-sm",
+                      "group flex items-center justify-between gap-3 px-3 py-2 text-sm",
                       "border-l-2 transition-colors",
                       isActive
                         ? "border-gold bg-gold/10 text-gold"
                         : "border-transparent text-white/60 hover:text-white hover:bg-white/5"
                     )}
                   >
-                    <Icon size={15} className="flex-shrink-0" />
-                    <span className="truncate">{it.label}</span>
+                    <span className="flex items-center gap-3 min-w-0">
+                      <Icon size={15} className="flex-shrink-0" />
+                      <span className="truncate">{it.label}</span>
+                    </span>
+                    {it.id === "edit-song" && (
+                      <span className="text-[8px] font-mono uppercase tracking-[0.1em] px-1.5 py-0.5 bg-gold/20 text-gold border border-gold/30 leading-none">
+                        New
+                      </span>
+                    )}
                   </NavLink>
                 )
               })}

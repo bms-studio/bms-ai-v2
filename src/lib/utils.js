@@ -99,3 +99,28 @@ export async function copyText(text) {
 export function fileToURL(file) {
   return URL.createObjectURL(file)
 }
+
+// Format bytes into a human-readable string (e.g. 1.5 MB)
+export function fmtBytes(bytes) {
+  if (!bytes || bytes < 1) return "0 B"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let i = 0
+  let n = bytes
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i++
+  }
+  const fixed = n < 10 && i > 0 ? n.toFixed(2) : n < 100 && i > 0 ? n.toFixed(1) : Math.round(n)
+  return fixed + " " + units[i]
+}
+
+// Format seconds into mm:ss (or h:mm:ss if >= 1h)
+export function fmtTime(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0))
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  const pad = (n) => String(n).padStart(2, "0")
+  if (h > 0) return h + ":" + pad(m) + ":" + pad(s)
+  return m + ":" + pad(s)
+}
