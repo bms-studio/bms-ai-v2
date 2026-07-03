@@ -17,9 +17,18 @@
 // CORS: apis.roblox.com support CORS untuk credential-less (api-key) request.
 
 import { ROBLOX_OPEN_CLOUD } from '../config/endpoints.js'
+import { pollAudioOperation } from './roblox.js'
 
 const API_KEY_STORAGE = 'bms.roblox.apiKey'
 const USER_ID_STORAGE = 'bms.roblox.userId'
+
+// Untuk audio "music" (umumnya > 6 detik), Roblox Open Cloud tidak langsung
+// mengembalikan assetId. Response awalnya adalah path ke Operation API yang
+// harus di-poll sampai moderasi selesai.
+//   POST /assets/v1/assets         → { path: "operations/<opId>" } (HTTP 200/202)
+//   GET  /assets/v1/operations/:id → { done: true, response: { path: "assets/<id>", assetId } }
+//                                  | { done: true, error: {...} }
+const OPERATION_PATH_RE = /^operations\/([^/]+)\/?$/i
 
 /* -------------------------------------------------------------------------- */
 /*  API Key & User ID management                                              */
@@ -183,7 +192,6 @@ export async function uploadAudio({
         try { body = JSON.parse(rawText) } catch { body = null }
       }
       if (status >= 200 && status < 300) {
-        onProgress?.(100)
         resolve({ status, body: body || {}, rawText })
       } else {
         const errText = (body && (body.error || body.message || body.errors))
@@ -213,6 +221,61 @@ export async function uploadAudio({
   // Kita coba extract id dari path; kalau tidak ada, fallback ke assetId field.
   const body = result?.body || {}
   const path = body.path || body.assetPath || ''
+
+  // === Music moderation polling flow ===
+  // Untuk audio "music" (umumnya > 6 detik), Roblox Open Cloud TIDAK
+  // langsung mengembalikan assetId. Response awalnya adalah:
+  //   { path: "operations/<operationId>", ... }   (HTTP 200/202)
+  // Kita harus poll GET /assets/v1/operations/:id sampai moderasi
+  // selesai. Lihat: roblox.js → pollAudioOperation().
+  // Referensi: https://devforum.roblox.com/t/open-cloud-audio-api-changes
+  if (onProgress) onProgress(88)
+  const opMatch = typeof path === 'string' ? path.match(OPERATION_PATH_RE) : null
+  if (opMatch) {
+    const operationId = opMatch[1]
+    if (onProgress) onProgress(90)
+    let pollRes
+    try {
+      pollRes = await pollAudioOperation(key, operationId, {
+        timeoutMs: 180_000,
+        intervalMs: 3000,
+      })
+    } catch (pollErr) {
+      throw new Error(
+        'Gagal polling moderasi Roblox: ' + (pollErr?.message || String(pollErr)) +
+        '. Operation ID: ' + operationId
+      )
+    }
+    if (pollRes && pollRes.done === true && pollRes.assetId) {
+      const polledAssetId = Number(pollRes.assetId)
+      if (onProgress) onProgress(100)
+      return {
+        ok: true,
+        assetId: polledAssetId,
+        ownerId: null,
+        path: `assets/${polledAssetId}`,
+        playbackUrl: `https://assetdelivery.roblox.com/v1/asset/?id=${polledAssetId}`,
+        moderationStatus: 'approved',
+        operationId,
+        raw: body,
+      }
+    }
+    if (pollRes && pollRes.done === true && pollRes.failed) {
+      throw new Error(
+        'Moderasi Roblox menolak audio: ' + (pollRes.error || 'Unknown reason') +
+        '. Cek apakah file berhak cipta atau durasi melebihi 360 detik. ' +
+        'Operation ID: ' + operationId
+      )
+    }
+    // Timeout: pollRes.done !== true
+    throw new Error(
+      'Moderasi Roblox timeout setelah 180s. ' +
+      'Operation ID: ' + operationId +
+      '. Coba lagi nanti atau cek status di dashboard Roblox Creator ' +
+      '(https://create.roblox.com/dashboard/credentials).'
+    )
+  }
+
   let assetId = extractAssetId(path) || (body.assetId ? Number(body.assetId) : null)
   const ownerId = extractOwnerId(path) || (body.creatorId ? Number(body.creatorId) : null)
 

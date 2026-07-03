@@ -2,6 +2,7 @@ import { cn } from "../lib/utils.js"
 
 const VARIANTS = {
   default:     "border-gold/30 bg-gold/10 text-gold shadow-glow-gold",
+  gold:        "border-gold/40 bg-gold/10 text-gold shadow-glow-gold",
   secondary:   "border-white/10 bg-charcoal text-white/80",
   destructive: "border-destructive/30 bg-destructive/10 text-destructive shadow-glow-error",
   success:     "border-success/30 bg-success/10 text-success shadow-glow-success",

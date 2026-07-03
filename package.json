@@ -1,24 +1,34 @@
 {
   "name": "bms-ai-v2",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.5.0",
   "type": "module",
-  "description": "Auralis AI v2 - Cyberpunk Glassmorphism all-in-one tools dashboard (uploads go directly from browser to Roblox Open Cloud).",
+  "description": "Auralis AI v2 - Cyberpunk Glassmorphism all-in-one tools dashboard. Frontend uploads to Roblox Open Cloud directly from the browser; an optional Express server is provided for legacy cookie-based flows.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && gh-pages -d dist"
+    "deploy": "vite build && gh-pages -d dist",
+    "server": "node server.js",
+    "postinstall": "node -e \"console.log('bms-ai-v2 installed. Run npm run dev to start.')\""
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "jsmediatags": "^3.9.7",
     "lamejs": "^1.2.1",
     "lucide-react": "^0.439.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
     "wavesurfer.js": "^7.8.6"
+  },
+  "optionalDependencies": {
+    "express": "^4.19.2",
+    "form-data": "^4.0.0",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.17.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
