@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback } from "react"
-import { Upload, UploadCloud, Music2, ExternalLink, KeyRound, Eye, EyeOff, ShieldAlert, Download, FileAudio, Settings2, Info, RefreshCw, Sparkles } from "lucide-react"
+import { Upload, UploadCloud, Music2, ExternalLink, KeyRound, Eye, EyeOff, ShieldAlert, Download, FileAudio, Settings2, Info, Sparkles, RefreshCw } from "lucide-react"
 import { SectionHead, ErrorBox } from "../components/UI.jsx"
 import StatusBadge from "../components/StatusBadge.jsx"
 import { fmtBytes, fmtTime } from "../lib/utils.js"
@@ -16,6 +16,8 @@ const MODES=[
   {id:'extreme',label:'Extreme',desc:'All + mono',color:'#ef4444'}]
 const LG={ringan:{eq:[40,2000,14000],g:[-1,-1,-1],tempo:.998,p:0,c:0,m:0},sedang:{eq:[40,100,1000,4000,14000],g:[-1.5,-1,-1.5,-1.5,-1],tempo:.995,p:1,c:0,m:0},berat:{eq:[30,60,120,500,2000,6000,14000],g:[-2,-1.5,-1.5,-2,-2,-2,-1.5],tempo:.99,p:1,c:1,m:0},extreme:{eq:[20,40,80,160,400,1000,3000,8000,16000],g:[-3,-2.5,-2,-2,-2.5,-2.5,-3,-2,-2],tempo:.985,p:1,c:1,m:1}}
 const SK='bms.roblox.apiKey',UK='bms.roblox.userId',GK='bms.roblox.groupId',MK='bms_bp_mode',NK='bms.displayName',DK='bms.description'
+const ROX=uid=>`https://www.roblox.com/Thumbs/Avatar.ashx?userId=${uid}&x=150&y=150&format=png`
+const RGX=gid=>`https://www.roblox.com/Thumbs/GroupIcon.ashx?groupId=${gid}&x=150&y=150&format=png`
 
 export default function EditSong() {
   const [file,setFile]=useState(null)
@@ -35,10 +37,37 @@ export default function EditSong() {
   const [previewDur,setPreviewDur]=useState(0)
   const [result,setResult]=useState(null)
   const [error,setError]=useState('')
-  const [imgErr,setImgErr]=useState({avatar:0,group:0})
+  const [avImg,setAvImg]=useState('');const [avErr,setAvErr]=useState(0)
+  const [grImg,setGrImg]=useState('');const [grErr,setGrErr]=useState(0)
   const [dragOver,setDragOver]=useState(false)
   const fileRef=useRef(null)
   const audioRef=useRef(null)
+
+  async function fetchAvatar(){
+    setAvImg('');setAvErr(0);if(!uid.match(/^\d+$/))return
+    try{
+      const r=await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${uid}&size=150x150&format=Png`)
+      if(!r.ok)return setAvErr(1)
+      const d=await r.json()
+      if(d?.data?.[0]?.imageUrl)setAvImg(d.data[0].imageUrl)
+      else setAvErr(1)
+    }catch(e){setAvImg(ROX(uid))}
+  }
+  async function fetchGroup(){
+    setGrImg('');setGrErr(0);if(!gid.match(/^\d+$/))return
+    try{
+      const r=await fetch(`https://thumbnails.roblox.com/v1/groups/icon?groupIds=${gid}&size=150x150&format=Png`)
+      if(!r.ok)return setGrErr(1)
+      const d=await r.json()
+      if(d?.data?.[0]?.imageUrl)setGrImg(d.data[0].imageUrl)
+      else setGrErr(1)
+    }catch(e){setGrImg(RGX(gid))}
+  }
+  // Auto-fetch when IDs change
+  const [prevUid,setPrevUid]=useState(uid)
+  const [prevGid,setPrevGid]=useState(gid)
+  if(uid!==prevUid){setPrevUid(uid);fetchAvatar()}
+  if(gid!==prevGid){setPrevGid(gid);fetchGroup()}
 
   const decodeFile=useCallback(async f=>{const b=await f.arrayBuffer();const c=new AudioContext();const a=await c.decodeAudioData(b);await c.close();return a},[])
   function makeNoise(l){const o=new Float32Array(l);let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;for(let i=0;i<l;i++){const w=Math.random()*2-1;b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;o[i]=b0+b1+b2+b3+b4+b5+b6+w*.5362;b6=w*.115926};let mx=0;for(let i=0;i<l;i++){const a=Math.abs(o[i]);if(a>mx)mx=a};if(mx>0)for(let i=0;i<l;i++)o[i]/=mx;return o}
@@ -132,8 +161,6 @@ export default function EditSong() {
   function pickFile(f){setFile(f);setPreviewUrl(null);setPreviewDur(0);setResult(null);setError('')}
 
   const mc=MODES.find(m=>m.id===mode)?.color||'#d4af37'
-  const avatarUrl=uid?`https://www.roblox.com/Thumbs/Avatar.ashx?userId=${uid}&x=150&y=150&format=png`:null
-  const groupUrl=gid?`https://www.roblox.com/Thumbs/GroupIcon.ashx?groupId=${gid}&x=150&y=150&format=png`:null
 
   return (<div className="page-pad" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
     <SectionHead kicker="// studio" title="Bypass Audible Magic"
@@ -144,64 +171,55 @@ export default function EditSong() {
 
     <div className="grid lg:grid-cols-5 gap-5">
 
-      {/* ===== MAIN (3/5) ===== */}
+      {/* MAIN */}
       <div className="lg:col-span-3 space-y-5">
 
         {/* FILE + INFO */}
-        <div className="relative">
-          <div className={`relative overflow-hidden rounded-2xl backdrop-blur-xl ${dragOver?'scale-[1.01]':''} transition-all duration-300`}
-            style={{background:dragOver?'rgba(212,175,55,0.04)':'rgba(18,18,24,0.5)',border:`1px solid ${dragOver?'rgba(212,175,55,0.3)':'rgba(255,255,255,0.04)'}`,boxShadow:dragOver?'0 0 40px rgba(212,175,55,0.06)':'0 4px 24px rgba(0,0,0,0.2)'}}>
-            <div className="absolute inset-0 bg-gradient-to-br from-gold/[0.02] to-transparent pointer-events-none"/>
-            <div className="p-5 relative">
-              <div className="flex items-center gap-2 mb-4"><Sparkles size={15} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Source</span></div>
-              <div className="grid md:grid-cols-5 gap-4">
-                <div className="md:col-span-3">
-                  <div className={`rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-300`}
-                    style={{borderColor:dragOver?'rgba(212,175,55,0.4)':'rgba(255,255,255,0.06)',background:dragOver?'rgba(212,175,55,0.04)':'rgba(0,0,0,0.15)'}}
-                    onClick={()=>fileRef.current?.click()}>
-                    <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={e=>e.target.files?.[0]&&pickFile(e.target.files[0])}/>
-                    <div className="text-3xl mb-2 opacity-40">{file?'🎵':'🎵'}</div>
-                    {file?<><div className="font-semibold text-white text-sm">{file.name}</div><div className="text-[10px] font-mono text-white/40 mt-1">{fmtBytes(file.size)}</div></>
-                      :<><div className="font-semibold text-white text-sm">Drop audio file here</div><div className="text-[10px] font-mono text-white/40 mt-1">mp3 · wav · ogg · flac · m4a</div></>}
-                  </div>
-                </div>
-                <div className="md:col-span-2 space-y-2">
-                  <div className="flex items-center gap-2 mb-1"><Settings2 size={12} className="text-gold/60"/><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/40">Detail</span></div>
-                  <input value={dName} onChange={e=>setDName(e.target.value)} placeholder="Nama lagu" className="input text-sm"/>
-                  <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Deskripsi (opsional)" className="input text-xs" rows={2} style={{resize:'none'}}/>
-                </div>
+        <div className={`p-5 rounded-2xl backdrop-blur-xl transition-all duration-300 ${dragOver?'scale-[1.01]':''}`}
+          style={{background:dragOver?'rgba(212,175,55,0.04)':'rgba(18,18,24,0.6)',border:`1px solid ${dragOver?'rgba(212,175,55,0.3)':'rgba(255,255,255,0.04)'}`,boxShadow:'0 8px 32px rgba(0,0,0,0.3)'}}>
+          <div className="flex items-center gap-2 mb-4"><Sparkles size={15} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Source Audio</span></div>
+          <div className="grid md:grid-cols-5 gap-4">
+            <div className="md:col-span-3">
+              <div onClick={()=>fileRef.current?.click()} className="rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-300"
+                style={{borderColor:dragOver?'rgba(212,175,55,0.4)':'rgba(255,255,255,0.06)',background:dragOver?'rgba(212,175,55,0.04)':'rgba(0,0,0,0.2)'}}>
+                <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={e=>e.target.files?.[0]&&pickFile(e.target.files[0])}/>
+                <div className="text-3xl mb-2 opacity-40">🎵</div>
+                {file?<><div className="font-semibold text-white text-sm">{file.name}</div><div className="text-[10px] font-mono text-white/40 mt-1">{fmtBytes(file.size)}</div></>
+                  :<><div className="font-semibold text-white text-sm">Drop audio file here</div><div className="text-[10px] font-mono text-white/40 mt-1">mp3 · wav · ogg · flac · m4a</div></>}
               </div>
+            </div>
+            <div className="md:col-span-2 space-y-2">
+              <div className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/40 mb-1">Info Upload</div>
+              <input value={dName} onChange={e=>setDName(e.target.value)} placeholder="Display name (nama lagu)" className="input text-sm" style={{borderRadius:8}}/>
+              <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Description (opsional)" className="input text-xs" rows={2} style={{resize:'none',borderRadius:8}}/>
             </div>
           </div>
         </div>
 
         {/* MODE */}
-        <div className="relative overflow-hidden rounded-2xl backdrop-blur-xl transition-all duration-300"
-          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
-          <div className="absolute inset-0 bg-gradient-to-br from-gold/[0.02] to-transparent pointer-events-none"/>
-          <div className="p-5 relative">
-            <div className="flex items-center gap-2 mb-4"><ShieldAlert size={15} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Bypass Mode</span></div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {MODES.map(m=>
-                <button key={m.id} onClick={()=>{setMode(m.id);localStorage.setItem(MK,m.id)}}
-                  className="px-4 py-2.5 text-xs font-mono text-center transition-all duration-200 rounded-xl whitespace-nowrap"
-                  style={{background:mode===m.id?`${m.color}18`:'rgba(255,255,255,0.03)',border:`1px solid ${mode===m.id?`${m.color}40`:'rgba(255,255,255,0.04)'}`,color:mode===m.id?m.color:'rgba(255,255,255,0.45)',boxShadow:mode===m.id?`0 0 30px ${m.color}15`:'none'}}>
-                  <div className="font-bold">{m.label}</div>
-                  <div className="opacity-60" style={{fontSize:9}}>{m.desc}</div>
-                </button>
-              )}
+        <div className="p-5 rounded-2xl backdrop-blur-xl" style={{background:'rgba(18,18,24,0.6)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 8px 32px rgba(0,0,0,0.3)'}}>
+          <div className="flex items-center gap-2 mb-4"><ShieldAlert size={15} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Bypass Mode</span></div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+            {MODES.map(m=>
+              <button key={m.id} onClick={()=>{setMode(m.id);localStorage.setItem(MK,m.id)}}
+                className="px-2 py-2.5 text-xs font-mono text-center transition-all duration-200 rounded-xl"
+                style={{background:mode===m.id?`${m.color}18`:'rgba(255,255,255,0.03)',border:`1px solid ${mode===m.id?`${m.color}40`:'rgba(255,255,255,0.04)'}`,color:mode===m.id?m.color:'rgba(255,255,255,0.45)',boxShadow:mode===m.id?`0 0 30px ${m.color}15`:'none'}}>
+                <div className="font-bold text-xs">{m.label}</div>
+                <div className="opacity-60" style={{fontSize:8}}>{m.desc}</div>
+              </button>
+            )}
+          </div>
+          <div className="h-px w-full mb-4" style={{background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.04),transparent)'}}/>
+          <div className="flex items-center gap-5 flex-wrap">
+            <div className="flex items-center gap-2"><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/50">Output Format</span>
+              <select value={format} onChange={e=>setFormat(e.target.value)} className="text-xs font-mono px-3 py-1.5" style={{background:'rgba(0,0,0,0.3)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:8,color:'#e8e8ed'}}>
+                <option value="ogg">OGG</option><option value="mp3">MP3</option><option value="wav">WAV</option>
+              </select>
             </div>
-            <div className="flex items-center gap-5 flex-wrap">
-              <div className="flex items-center gap-2"><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/40">Output</span>
-                <select value={format} onChange={e=>setFormat(e.target.value)} className="input text-xs font-mono" style={{width:80,borderRadius:8}}>
-                  <option value="ogg">OGG</option><option value="mp3">MP3</option><option value="wav">WAV</option>
-                </select>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={decoy} onChange={e=>setDecoy(e.target.checked)} className="accent-gold" style={{width:14,height:14}}/>
-                <span className="text-xs text-white/50">Decoy Start 4s</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={decoy} onChange={e=>setDecoy(e.target.checked)} className="accent-gold" style={{width:14,height:14}}/>
+              <span className="text-xs text-white/50">Decoy Start 4s</span>
+            </label>
           </div>
         </div>
 
@@ -218,25 +236,27 @@ export default function EditSong() {
         </div>
 
         {/* PROGRESS */}
-        {loading&&<div className="rounded-xl backdrop-blur-xl p-4" style={{background:'rgba(18,18,24,0.4)',border:'1px solid rgba(255,255,255,0.04)'}}>
+        {loading&&<div className="p-4 rounded-xl backdrop-blur-xl" style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)'}}>
           <div className="flex items-center justify-between mb-2"><span className="text-xs font-mono text-white/50">{loadText}</span><span className="text-xs font-mono text-gold">{loadPct}%</span></div>
           <div className="h-2 rounded-full overflow-hidden" style={{background:'rgba(255,255,255,0.04)'}}>
             <div className="h-full rounded-full transition-all duration-500 ease-out" style={{width:`${loadPct}%`,background:`linear-gradient(90deg,${mc},#f0d68a)`}}/>
           </div>
         </div>}
 
-        {/* PREVIEW */}
-        {previewUrl&&<div className="rounded-xl backdrop-blur-xl p-5" style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+        {/* PREVIEW + DOWNLOAD */}
+        {previewUrl&&<div className="p-5 rounded-2xl backdrop-blur-xl" style={{background:'rgba(18,18,24,0.6)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 8px 32px rgba(0,0,0,0.3)'}}>
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><Music2 size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/50">Preview{previewDur>0?` · ${fmtTime(Math.round(previewDur))}`:''}</span></div>
-            <a href={previewUrl} download={`bypassed_${mode}.${format}`} className="btn-ghost btn-xs flex items-center gap-1 rounded-lg"><Download size={11}/> Download</a>
+            <div className="flex items-center gap-2"><Music2 size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/50">Preview {previewDur>0?`· ${fmtTime(Math.round(previewDur))}`:''}</span></div>
+            <a href={previewUrl} download={`bypassed_${mode}.${format}`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-mono transition-all duration-200"
+              style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.06)',color:'#a0a0aa'}}>
+              <Download size={11}/> Download</a>
           </div>
           <audio ref={audioRef} controls preload="auto" className="w-full rounded-lg"/>
         </div>}
 
         {/* RESULT */}
-        {result&&result.assetId&&<div className="relative overflow-hidden rounded-2xl p-5" style={{background:'linear-gradient(135deg,rgba(16,185,129,0.06),transparent)',border:'1px solid rgba(16,185,129,0.2)'}}>
-          <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-20" style={{background:'radial-gradient(circle,rgba(16,185,129,0.3),transparent 70%)',transform:'translate(30%,-30%)'}}/>
+        {result&&result.assetId&&<div className="relative overflow-hidden p-5 rounded-2xl" style={{background:'linear-gradient(135deg,rgba(16,185,129,0.06),transparent)',border:'1px solid rgba(16,185,129,0.2)'}}>
+          <div className="absolute top-0 right-0 w-48 h-48 rounded-full" style={{background:'radial-gradient(circle,rgba(16,185,129,0.3),transparent 70%)',transform:'translate(30%,-30%)',opacity:0.3}}/>
           <div className="relative flex items-center gap-3"><div className="w-10 h-10 rounded-full flex items-center justify-center" style={{background:'rgba(16,185,129,0.1)'}}><svg viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" className="w-5 h-5"><path d="M20 6L9 17l-5-5"/></svg></div>
             <div><div className="text-emerald-400 font-bold">Upload Berhasil!</div><div className="text-xs font-mono text-white/50 mt-0.5">Asset ID: {result.assetId}</div></div>
           </div>
@@ -245,60 +265,64 @@ export default function EditSong() {
         {result&&result.saved&&<div className="text-emerald-400 text-xs font-mono">✓ Disimpan</div>}
       </div>
 
-      {/* ===== SIDEBAR (2/5) ===== */}
+      {/* SIDEBAR */}
       <div className="lg:col-span-2 space-y-5">
 
         {/* AVATAR + GROUP */}
-        <div className="rounded-2xl backdrop-blur-xl p-5 transition-all duration-300"
-          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+        <div className="p-5 rounded-2xl backdrop-blur-xl" style={{background:'rgba(18,18,24,0.6)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 8px 32px rgba(0,0,0,0.3)'}}>
           <div className="flex items-center gap-2 mb-4"><Sparkles size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Roblox Preview</span></div>
-          <div className="flex gap-4 mb-3">
-            <div className="flex-1 text-center">
-              <div className="w-20 h-20 mx-auto rounded-2xl overflow-hidden flex items-center justify-center transition-all duration-300"
-                style={{background:'rgba(0,0,0,0.25)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:!imgErr.avatar&&avatarUrl?'0 0 30px rgba(212,175,55,0.15)':'none'}}>
-                {avatarUrl&&!imgErr.avatar?<img src={avatarUrl} onError={()=>setImgErr(p=>({...p,avatar:1}))} className="w-full h-full object-cover"/>:<div className="text-white/15"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>}
+          <div className="flex gap-5 mb-4">
+            <div className="flex-1 flex flex-col items-center gap-2">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center transition-all duration-300"
+                style={{background:'rgba(0,0,0,0.3)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:avImg&&!avErr?'0 0 30px rgba(212,175,55,0.15)':'none'}}>
+                {avImg&&!avErr
+                  ?<img src={avImg} onError={()=>setAvErr(1)} className="w-full h-full object-cover"/>
+                  :<div className="text-white/15"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>}
               </div>
-              <div className="text-[9px] font-mono text-white/40 mt-2">User</div>
+              <div className="text-[9px] font-mono text-white/40">User</div>
+              {uid&&!avImg&&<button onClick={fetchAvatar} className="text-[9px] font-mono text-gold/60 hover:text-gold transition-colors"><RefreshCw size={10} className="inline mr-1"/>Muat ulang</button>}
             </div>
-            <div className="flex-1 text-center">
-              <div className="w-20 h-20 mx-auto rounded-2xl overflow-hidden flex items-center justify-center transition-all duration-300"
-                style={{background:'rgba(0,0,0,0.25)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:!imgErr.group&&groupUrl?'0 0 30px rgba(212,175,55,0.15)':'none'}}>
-                {groupUrl&&!imgErr.group?<img src={groupUrl} onError={()=>setImgErr(p=>({...p,group:1}))} className="w-full h-full object-cover"/>:<div className="text-white/15"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>}
+            <div className="flex-1 flex flex-col items-center gap-2">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center transition-all duration-300"
+                style={{background:'rgba(0,0,0,0.3)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:grImg&&!grErr?'0 0 30px rgba(212,175,55,0.15)':'none'}}>
+                {grImg&&!grErr
+                  ?<img src={grImg} onError={()=>setGrErr(1)} className="w-full h-full object-cover"/>
+                  :<div className="text-white/15"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>}
               </div>
-              <div className="text-[9px] font-mono text-white/40 mt-2">Group</div>
+              <div className="text-[9px] font-mono text-white/40">Group</div>
+              {gid&&!grImg&&<button onClick={fetchGroup} className="text-[9px] font-mono text-gold/60 hover:text-gold transition-colors"><RefreshCw size={10} className="inline mr-1"/>Muat ulang</button>}
             </div>
           </div>
-          <div className="text-[10px] font-mono text-white/30 text-center">Masukkan ID, gambar otomatis tampil</div>
+          <div className="h-px w-full mb-3" style={{background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.04),transparent)'}}/>
+          <div className="text-[10px] font-mono text-white/30 text-center leading-relaxed">Masukkan ID user/group, gambar otomatis terfetch dari Roblox API</div>
         </div>
 
         {/* CREDENTIALS */}
-        <div className="rounded-2xl backdrop-blur-xl p-5"
-          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+        <div className="p-5 rounded-2xl backdrop-blur-xl" style={{background:'rgba(18,18,24,0.6)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 8px 32px rgba(0,0,0,0.3)'}}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><KeyRound size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Credentials</span></div>
-            <div className={`w-2 h-2 rounded-full ${ak?'bg-emerald-400':'bg-red-400'}`}/>
+            <div className={`w-2 h-2 rounded-full ${ak?'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]':'bg-red-400'}`}/>
           </div>
           <div className="space-y-2">
             <div className="flex gap-1.5">
               <input type={showAk?'text':'password'} value={ak} onChange={e=>setAk(e.target.value)} placeholder="API Key rbx_..." className="input text-xs flex-1 font-mono" style={{borderRadius:8}}/>
-              <button onClick={()=>setShowAk(s=>!s)} className="btn-ghost btn-xs px-2" style={{borderRadius:8}}>{showAk?<EyeOff size={12}/>:<Eye size={12}/>}</button>
+              <button onClick={()=>setShowAk(s=>!s)} className="px-2 rounded-lg transition-all" style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.06)',color:'#a0a0aa'}}>{showAk?<EyeOff size={12}/>:<Eye size={12}/>}</button>
             </div>
-            <input value={uid} onChange={e=>setUid(e.target.value)} placeholder="User ID" className="input text-xs font-mono" style={{borderRadius:8}}/>
-            <input value={gid} onChange={e=>setGid(e.target.value)} placeholder="Group ID" className="input text-xs font-mono" style={{borderRadius:8}}/>
+            <input value={uid} onChange={e=>{setUid(e.target.value)}} placeholder="User ID" className="input text-xs font-mono" style={{borderRadius:8}}/>
+            <input value={gid} onChange={e=>{setGid(e.target.value)}} placeholder="Group ID" className="input text-xs font-mono" style={{borderRadius:8}}/>
             <button onClick={saveAll} className="w-full py-2 rounded-xl font-bold text-xs uppercase tracking-[0.1em] transition-all duration-200 border"
-              style={{background:'rgba(212,175,55,0.08)',borderColor:'rgba(212,175,55,0.25)',color:'#d4af37'}}><KeyRound size={11} className="inline mr-1.5"/> Simpan</button>
+              style={{background:'rgba(212,175,55,0.08)',borderColor:'rgba(212,175,55,0.25)',color:'#d4af37'}}><KeyRound size={11} className="inline mr-1.5"/> Simpan Semua</button>
           </div>
         </div>
 
         {/* INFO */}
-        <div className="rounded-2xl backdrop-blur-xl p-5"
-          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+        <div className="p-5 rounded-2xl backdrop-blur-xl" style={{background:'rgba(18,18,24,0.6)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 8px 32px rgba(0,0,0,0.3)'}}>
           <div className="flex items-center gap-2 mb-3"><Info size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Info</span></div>
           <div className="text-xs text-white/40 leading-relaxed space-y-1.5">
             <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"/>100% browser processing</div>
             <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-gold"/>Upload via Roblox Open Cloud</div>
-            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-gold"/>Avatar/group via Roblox CDN</div>
-            <div className="border-t border-white/5 pt-2 mt-2 text-[11px] text-white/25 leading-relaxed">Shield/Stealth = metode spektral baru. Ringan s/d Extreme = legacy EQ + MP3 re-encode.</div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-gold"/>Avatar/group via Roblox Thumbnails API</div>
+            <div className="border-t border-white/5 pt-2 mt-2 text-[11px] text-white/25 leading-relaxed">Shield & Stealth = metode spektral. Ringan s/d Extreme = legacy EQ + MP3 re-encode.</div>
           </div>
         </div>
       </div>
