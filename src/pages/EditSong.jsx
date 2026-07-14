@@ -35,6 +35,7 @@ const LEGACY = {
 
 const API_KEY_STORAGE='bms.roblox.apiKey'
 const UID_STORAGE='bms.roblox.userId'
+const GID_STORAGE='bms.roblox.groupId'
 
 export default function EditSong() {
   const [file,setFile]=useState(null)
@@ -44,6 +45,7 @@ export default function EditSong() {
   const [ak,setAk]=useState(()=>localStorage.getItem(API_KEY_STORAGE)||'')
   const [showAk,setShowAk]=useState(false)
   const [uid,setUid]=useState(()=>localStorage.getItem(UID_STORAGE)||'')
+  const [gid,setGid]=useState(()=>localStorage.getItem(GID_STORAGE)||'')
   const [loading,setLoading]=useState(false)
   const [loadText,setLoadText]=useState('')
   const [previewUrl,setPreviewUrl]=useState(null)
@@ -330,7 +332,7 @@ export default function EditSong() {
   const handleUpload=useCallback(async()=>{
     if(!previewUrl){setError('Proses dulu audio nya!');return}
     if(!ak){setError('API Key belum diisi!');return}
-    if(!uid){setError('User ID belum diisi!');return}
+    if(!uid&&!gid){setError('Isi User ID (pribadi) atau Group ID (upload ke group)!');return}
     setLoading(true);setLoadText('Uploading to Roblox...');setError('');setResult(null)
     try{
       const resp=await fetch(previewUrl)
@@ -341,7 +343,7 @@ export default function EditSong() {
         displayName:name,
         description:`Uploaded via BMS Studio — Mode: ${mode}`,
         assetType:'Audio',
-        creationContext:{creator:{userId:Number(uid)}}
+        creationContext:{creator:gid.trim()?{groupId:Number(gid)}:{userId:Number(uid)}}
       }))
       fd.append('fileContent',blob,`${name}.${format}`)
 
@@ -377,6 +379,7 @@ export default function EditSong() {
   function saveKey(){
     localStorage.setItem(API_KEY_STORAGE,ak)
     localStorage.setItem(UID_STORAGE,uid)
+    localStorage.setItem(GID_STORAGE,gid)
     setResult({saved:true})
     setTimeout(()=>setResult(null),2000)
   }
@@ -491,7 +494,9 @@ export default function EditSong() {
                   {showAk?<EyeOff size={11}/>:<Eye size={11}/>}</button>
               </div>
               <label className="text-[9px] font-mono uppercase text-white/40 tracking-wider block pt-1">User ID</label>
-              <input value={uid} onChange={e=>setUid(e.target.value)} placeholder="12345678" className="input text-xs font-mono"/>
+              <input value={uid} onChange={e=>setUid(e.target.value)} placeholder="User ID (pribadi)" className="input text-xs font-mono"/>
+              <label className="text-[9px] font-mono uppercase text-white/40 tracking-wider block pt-1">Group ID</label>
+              <input value={gid} onChange={e=>setGid(e.target.value)} placeholder="Group ID (upload ke group)" className="input text-xs font-mono"/>
               <button onClick={saveKey} className="btn-primary btn-xs btn-full"><KeyRound size={11}/> Save</button>
             </div>
           </div>
