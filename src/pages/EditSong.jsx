@@ -44,21 +44,23 @@ export default function EditSong() {
   const [drag,setDrag]=useState(false)
   const fr=useRef(null);const ar=useRef(null)
 
-  // === Avatar/Group fetch ===
+  // === Avatar/Group fetch — dual approach: API → CDN || ashx fallback ===
+  const AV_ASHX=`https://www.roblox.com/Thumbs/Avatar.ashx?userId=${uid}&x=150&y=150&format=png`
+  const GR_ASHX=`https://www.roblox.com/Thumbs/GroupIcon.ashx?groupId=${gid}&x=150&y=150&format=png`
   useEffect(()=>{if(uid&&/^\d+$/.test(uid)){setAv(null);setAvLoad(0)
-    fetch(AV_URL+uid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setAv(d.data[0].imageUrl);setAvLoad(1)}else setAvLoad(-1)}).catch(()=>setAvLoad(-1))}
+    fetch(AV_URL+uid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setAv(d.data[0].imageUrl);setAvLoad(1)}else setAvLoad(-1)}).catch(()=>{setAvLoad(-1)})}
     else{setAv(null);setAvLoad(0)}},[uid])
   useEffect(()=>{if(gid&&/^\d+$/.test(gid)){setGr(null);setGrLoad(0)
-    fetch(GR_URL+gid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setGr(d.data[0].imageUrl);setGrLoad(1)}else setGrLoad(-1)}).catch(()=>setGrLoad(-1))}
+    fetch(GR_URL+gid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setGr(d.data[0].imageUrl);setGrLoad(1)}else setGrLoad(-1)}).catch(()=>{setGrLoad(-1)})}
     else{setGr(null);setGrLoad(0)}},[gid])
 
   // === Processing ===
   const dec=useCallback(async f=>{const b=await f.arrayBuffer();const c=new AudioContext();const a=await c.decodeAudioData(b);await c.close();return a},[])
   function mn(l){const o=new Float32Array(l);let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;for(let i=0;i<l;i++){const w=Math.random()*2-1;b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;o[i]=b0+b1+b2+b3+b4+b5+b6+w*.5362;b6=w*.115926};let mx=0;for(let i=0;i<l;i++){const a=Math.abs(o[i]);if(a>mx)mx=a};if(mx>0)for(let i=0;i<l;i++)o[i]/=mx;return o}
-  function eq(ctx,src,fr,gn){let c=src;for(let i=0;i<fr.length;i++){const f=ctx.createBiquadFilter();f.type='peaking';f.frequency.value=fr[i];f.Q.value=.5;f.gain.value=gn[i];c.connect(f);c=f}return c}
-  function pt(ctx,src,v){return eq(ctx,src,PF,PV[v%PV.length])}
-  function ph(ctx,src){const d=ctx.createDelay(1);d.delayTime.value=.005;const l=ctx.createOscillator();l.frequency.value=.5;const lg=ctx.createGain();lg.gain.value=.005;l.connect(lg);lg.connect(d.delayTime);l.start();const fb=ctx.createGain();fb.gain.value=.3;src.connect(d);d.connect(fb);fb.connect(d);return d}
-  function ch(ctx,src){const d1=ctx.createDelay(1),d2=ctx.createDelay(1);d1.delayTime.value=.02;d2.delayTime.value=.03;const l=ctx.createOscillator();l.frequency.value=.3;const lg=ctx.createGain();lg.gain.value=.005;l.connect(lg);lg.connect(d1.delayTime);lg.connect(d2.delayTime);l.start();const dy=ctx.createGain();dy.gain.value=.6;const wt=ctx.createGain();wt.gain.value=.4;src.connect(dy);src.connect(d1);src.connect(d2);d1.connect(wt);d2.connect(wt);const s=ctx.createGain();dy.connect(s);wt.connect(s);return s}
+  function eqFil(ctx,src,fr,gn){let c=src;for(let i=0;i<fr.length;i++){const f=ctx.createBiquadFilter();f.type='peaking';f.frequency.value=fr[i];f.Q.value=.5;f.gain.value=gn[i];c.connect(f);c=f}return c}
+  function ptFil(ctx,src,v){return eqFil(ctx,src,PF,PV[v%PV.length])}
+  function phFil(ctx,src){const d=ctx.createDelay(1);d.delayTime.value=.005;const l=ctx.createOscillator();l.frequency.value=.5;const lg=ctx.createGain();lg.gain.value=.005;l.connect(lg);lg.connect(d.delayTime);l.start();const fb=ctx.createGain();fb.gain.value=.3;src.connect(d);d.connect(fb);fb.connect(d);return d}
+  function chFil(ctx,src){const d1=ctx.createDelay(1),d2=ctx.createDelay(1);d1.delayTime.value=.02;d2.delayTime.value=.03;const l=ctx.createOscillator();l.frequency.value=.3;const lg=ctx.createGain();lg.gain.value=.005;l.connect(lg);lg.connect(d1.delayTime);lg.connect(d2.delayTime);l.start();const dy=ctx.createGain();dy.gain.value=.6;const wt=ctx.createGain();wt.gain.value=.4;src.connect(dy);src.connect(d1);src.connect(d2);d1.connect(wt);d2.connect(wt);const s=ctx.createGain();dy.connect(s);wt.connect(s);return s}
 
   const proc=useCallback(async()=>{
     if(!f)return;setLoading(true);setPct(0);setLt('Decoding...');setErr('');setPv(null);setPd(0);setRes(null)
@@ -69,7 +71,7 @@ export default function EditSong() {
         const t=b.length+pad;const o=new OfflineAudioContext(ch,t,sr)
         const nd=mn(Math.max(Math.floor(sr*(b.duration+dm/1000)),sr*30));const nb=o.createBuffer(1,nd.length,sr);nb.getChannelData(0).set(nd)
         const ns=o.createBufferSource();ns.buffer=nb;ns.loop=nd.length<t;const ng=o.createGain();ng.gain.value=.001;ns.connect(ng)
-        const src=o.createBufferSource();src.buffer=b;const g2=o.createGain();pt(o,src,0).connect(g2);ng.connect(g2);g2.connect(o.destination)
+        const src=o.createBufferSource();src.buffer=b;const g2=o.createGain();ptFil(o,src,0).connect(g2);ng.connect(g2);g2.connect(o.destination)
         src.start(pad/sr);ns.start(0);setLt('Rendering...');setPct(40);b=await o.startRendering();setPct(70)
       }else if(mode==='stealth'){
         setLt('Segments...');setPct(5);await new Promise(r=>setTimeout(r,0))
@@ -77,14 +79,14 @@ export default function EditSong() {
         const o=new OfflineAudioContext(ch,t,sr)
         const nd=mn(Math.max(Math.floor(sr*(b.duration+dm/1000)),sr*30));const nb=o.createBuffer(1,nd.length,sr);nb.getChannelData(0).set(nd)
         const ns=o.createBufferSource();ns.buffer=nb;ns.loop=nd.length<t;const ng=o.createGain();ng.gain.value=.001;ns.connect(ng);const ng2=o.createGain();ng.connect(ng2);ng2.connect(o.destination);ns.start(0)
-        for(let s=0;s<n;s++){const st=s*seg,en=Math.min((s+1)*seg,b.length),ss=en-st;if(ss<=0)continue;const sg=o.createBuffer(ch,ss,sr);for(let c=0;c<ch;c++){const sd=b.getChannelData(c),dd=sg.getChannelData(c);for(let i=0;i<ss;i++)dd[i]=sd[st+i]||0};const src=o.createBufferSource();src.buffer=sg;let c2=pt(o,src,s);const tv=TV[s%TV.length];if(tv!==1.0)src.playbackRate.value=tv;const gg=o.createGain();c2.connect(gg);gg.connect(o.destination);src.start((pad+st)/sr);setPct(5+Math.round(s/n*50));if(s%5===0)await new Promise(r=>setTimeout(r,0))}
+        for(let s=0;s<n;s++){const st=s*seg,en=Math.min((s+1)*seg,b.length),ss=en-st;if(ss<=0)continue;const sg=o.createBuffer(ch,ss,sr);for(let c=0;c<ch;c++){const sd=b.getChannelData(c),dd=sg.getChannelData(c);for(let i=0;i<ss;i++)dd[i]=sd[st+i]||0};const src=o.createBufferSource();src.buffer=sg;let c2=ptFil(o,src,s);const tv=TV[s%TV.length];if(tv!==1.0)src.playbackRate.value=tv;const gg=o.createGain();c2.connect(gg);gg.connect(o.destination);src.start((pad+st)/sr);setPct(5+Math.round(s/n*50));if(s%5===0)await new Promise(r=>setTimeout(r,0))}
         setLt('Rendering...');setPct(55);b=await o.startRendering();setPct(70)
       }else{
         const c=LG[mode];if(!c)throw new Error('Unknown')
         setLt(`${mode}...`);setPct(5);await new Promise(r=>setTimeout(r,0))
         const c2=c.m?1:ch,t=b.length+pad;const o=new OfflineAudioContext(c2,t,sr);const src=o.createBufferSource();src.buffer=b
-        let chain=src;chain=eq(o,chain,c.eq,c.g);if(c.tempo!==1.0)src.playbackRate.value=c.tempo
-        if(c.p)chain=ph(o,chain);if(c.c)chain=ch(o,chain)
+        let chain=src;chain=eqFil(o,chain,c.eq,c.g);if(c.tempo!==1.0)src.playbackRate.value=c.tempo
+        if(c.p)chain=phFil(o,chain);if(c.c)chain=chFil(o,chain)
         if(c.m&&ch>1){const m=o.createChannelMerger(1);chain.connect(m);chain=m}
         const gg=o.createGain();chain.connect(gg);gg.connect(o.destination);src.start(pad/sr)
         await new Promise(r=>setTimeout(r,0));setPct(25);let p=await o.startRendering();setPct(55)
@@ -256,25 +258,27 @@ export default function EditSong() {
                 <div className="w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center transition-all duration-300"
                   style={{background:'rgba(0,0,0,0.3)',border:'1px solid rgba(255,255,255,0.04)'}}>
                   {av&&avLoad===1
-                    ?<img src={av} className="w-full h-full object-cover" alt="avatar"/>
+                    ?<img src={av} className="w-full h-full object-cover" alt="avatar" referrerPolicy="no-referrer" crossOrigin="anonymous"/>
                     :avLoad===-1
-                      ?<User size={24} className="text-white/20"/>
+                      ?<img src={AV_ASHX} className="w-full h-full object-cover" alt="avatar" referrerPolicy="no-referrer" crossOrigin="anonymous" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex'}}/>
                       :<div className="w-5 h-5 rounded-full border-2 border-gold/30 border-t-transparent animate-spin"/>}
+                  <div style={{display:'none'}}><User size={24} className="text-white/20"/></div>
                 </div>
                 <span className="text-[9px] font-mono text-white/40">User {uid?`#${uid}`:''}</span>
-                {avLoad===-1&&<button onClick={()=>{setAvLoad(0);fetch(AV_URL+uid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setAv(d.data[0].imageUrl);setAvLoad(1)}else setAvLoad(-1)}).catch(()=>setAvLoad(-1))}} className="text-[9px] text-gold/50 hover:text-gold transition-colors font-mono">⟳ Retry</button>}
+                {avLoad===-1&&<button onClick={()=>{setAvLoad(0);setAv(null);fetch(AV_URL+uid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setAv(d.data[0].imageUrl);setAvLoad(1)}else setAvLoad(-1)}).catch(()=>setAvLoad(-1))}} className="text-[9px] text-gold/50 hover:text-gold transition-colors font-mono">⟳ Retry API</button>}
               </div>
               <div className="flex-1 flex flex-col items-center gap-2">
                 <div className="w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center transition-all duration-300"
                   style={{background:'rgba(0,0,0,0.3)',border:'1px solid rgba(255,255,255,0.04)'}}>
                   {gr&&grLoad===1
-                    ?<img src={gr} className="w-full h-full object-cover" alt="group"/>
+                    ?<img src={gr} className="w-full h-full object-cover" alt="group" referrerPolicy="no-referrer" crossOrigin="anonymous"/>
                     :grLoad===-1
-                      ?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6 text-white/20"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      ?<img src={GR_ASHX} className="w-full h-full object-cover" alt="group" referrerPolicy="no-referrer" crossOrigin="anonymous" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex'}}/>
                       :<div className="w-5 h-5 rounded-full border-2 border-gold/30 border-t-transparent animate-spin"/>}
+                  <div style={{display:'none'}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6 text-white/20"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
                 </div>
                 <span className="text-[9px] font-mono text-white/40">Group {gid?`#${gid}`:''}</span>
-                {grLoad===-1&&<button onClick={()=>{setGrLoad(0);fetch(GR_URL+gid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setGr(d.data[0].imageUrl);setGrLoad(1)}else setGrLoad(-1)}).catch(()=>setGrLoad(-1))}} className="text-[9px] text-gold/50 hover:text-gold transition-colors font-mono">⟳ Retry</button>}
+                {grLoad===-1&&<button onClick={()=>{setGrLoad(0);setGr(null);fetch(GR_URL+gid+'&size=150x150&format=Png').then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(d?.data?.[0]?.imageUrl){setGr(d.data[0].imageUrl);setGrLoad(1)}else setGrLoad(-1)}).catch(()=>setGrLoad(-1))}} className="text-[9px] text-gold/50 hover:text-gold transition-colors font-mono">⟳ Retry API</button>}
               </div>
             </div>
             <div className="text-[10px] font-mono text-white/25 text-center leading-relaxed">Avatar & group icon via Roblox Thumbnails API</div>
