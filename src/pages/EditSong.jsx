@@ -1,13 +1,11 @@
 import { useRef, useState, useCallback } from "react"
-import { Upload, UploadCloud, Music2, ExternalLink, KeyRound, Eye, EyeOff, ShieldAlert, Download, User, Users, RefreshCw, FileAudio, Settings2, Info } from "lucide-react"
+import { Upload, UploadCloud, Music2, ExternalLink, KeyRound, Eye, EyeOff, ShieldAlert, Download, FileAudio, Settings2, Info, RefreshCw, Sparkles } from "lucide-react"
 import { SectionHead, ErrorBox } from "../components/UI.jsx"
 import StatusBadge from "../components/StatusBadge.jsx"
 import { fmtBytes, fmtTime } from "../lib/utils.js"
 
 const PF=[40,80,120,200,350,500,800,1200,2000,3000,5000,8000,12000,16000]
-const PV=[[0.3,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4],
-  [-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5],
-  [0.3,-0.5,0.4,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5,-0.3,0.4,-0.5]]
+const PV=[[0.3,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4],[-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5],[0.3,-0.5,0.4,-0.4,0.5,-0.3,0.4,-0.5,0.3,-0.4,0.5,-0.3,0.4,-0.5]]
 const TV=[1.0,0.997,1.003]
 const MODES=[
   {id:'shield',label:'Shield',desc:'Spektral + noise',color:'#d4af37'},
@@ -37,34 +35,10 @@ export default function EditSong() {
   const [previewDur,setPreviewDur]=useState(0)
   const [result,setResult]=useState(null)
   const [error,setError]=useState('')
-  const [avatarUrl,setAvatarUrl]=useState('')
-  const [avatarErr,setAvatarErr]=useState('')
-  const [giconUrl,setGiconUrl]=useState('')
-  const [giconErr,setGiconErr]=useState('')
+  const [imgErr,setImgErr]=useState({avatar:0,group:0})
   const [dragOver,setDragOver]=useState(false)
   const fileRef=useRef(null)
   const audioRef=useRef(null)
-
-  async function fetchAvatar(){
-    setAvatarUrl('');setAvatarErr('')
-    if(!uid.trim()||!/^\d+$/.test(uid.trim())){setAvatarErr('ID tidak valid');return}
-    try{
-      const r=await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${uid.trim()}&size=150x150&format=Png&isCircular=false`)
-      const d=await r.json()
-      if(d?.data?.[0]?.imageUrl)setAvatarUrl(d.data[0].imageUrl)
-      else setAvatarErr(d?.data?.[0]?.error||'Not found')
-    }catch(e){setAvatarErr('Fetch failed')}
-  }
-  async function fetchGicon(){
-    setGiconUrl('');setGiconErr('')
-    if(!gid.trim()||!/^\d+$/.test(gid.trim())){setGiconErr('ID tidak valid');return}
-    try{
-      const r=await fetch(`https://thumbnails.roblox.com/v1/groups/icon?groupIds=${gid.trim()}&size=150x150&format=Png`)
-      const d=await r.json()
-      if(d?.data?.[0]?.imageUrl)setGiconUrl(d.data[0].imageUrl)
-      else setGiconErr(d?.data?.[0]?.error||'Not found')
-    }catch(e){setGiconErr('Fetch failed')}
-  }
 
   const decodeFile=useCallback(async f=>{const b=await f.arrayBuffer();const c=new AudioContext();const a=await c.decodeAudioData(b);await c.close();return a},[])
   function makeNoise(l){const o=new Float32Array(l);let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;for(let i=0;i<l;i++){const w=Math.random()*2-1;b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;o[i]=b0+b1+b2+b3+b4+b5+b6+w*.5362;b6=w*.115926};let mx=0;for(let i=0;i<l;i++){const a=Math.abs(o[i]);if(a>mx)mx=a};if(mx>0)for(let i=0;i<l;i++)o[i]/=mx;return o}
@@ -77,52 +51,51 @@ export default function EditSong() {
     if(!file)return
     setLoading(true);setLoadPct(0);setLoadText('Decoding...');setError('');setPreviewUrl(null);setPreviewDur(0);setResult(null)
     try{
-      let buffer=await decodeFile(file);const sr=buffer.sampleRate,ch=buffer.numberOfChannels;const dm=decoy?4000:0,pad=Math.floor(sr*dm/1000)
+      let buf=await decodeFile(file);const sr=buf.sampleRate,ch=buf.numberOfChannels;const dm=decoy?4000:0,pad=Math.floor(sr*dm/1000)
       if(mode==='shield'){
-        setLoadText('Shield: procesing...');setLoadPct(5);await new Promise(r=>setTimeout(r,0))
-        const total=buffer.length+pad;const offline=new OfflineAudioContext(ch,total,sr)
-        const nd=makeNoise(Math.max(Math.floor(sr*(buffer.duration+dm/1000)),sr*30))
-        const nb=offline.createBuffer(1,nd.length,sr);nb.getChannelData(0).set(nd)
-        const ns=offline.createBufferSource();ns.buffer=nb;ns.loop=nd.length<total
-        const ng=offline.createGain();ng.gain.value=.001;ns.connect(ng)
-        const src=offline.createBufferSource();src.buffer=buffer
-        const g2=offline.createGain();pert(offline,src,0).connect(g2);ng.connect(g2);g2.connect(offline.destination)
+        setLoadText('Shield...');setLoadPct(5);await new Promise(r=>setTimeout(r,0))
+        const total=buf.length+pad;const o=new OfflineAudioContext(ch,total,sr)
+        const nd=makeNoise(Math.max(Math.floor(sr*(buf.duration+dm/1000)),sr*30))
+        const nb=o.createBuffer(1,nd.length,sr);nb.getChannelData(0).set(nd)
+        const ns=o.createBufferSource();ns.buffer=nb;ns.loop=nd.length<total
+        const ng=o.createGain();ng.gain.value=.001;ns.connect(ng)
+        const src=o.createBufferSource();src.buffer=buf
+        const g2=o.createGain();pert(o,src,0).connect(g2);ng.connect(g2);g2.connect(o.destination)
         src.start(pad/sr);ns.start(0)
-        setLoadText('Shield: rendering...');setLoadPct(40)
-        buffer=await offline.startRendering();setLoadPct(70)
+        setLoadText('Rendering...');setLoadPct(40);buf=await o.startRendering();setLoadPct(70)
       }else if(mode==='stealth'){
-        setLoadText('Stealth: segments...');setLoadPct(5);await new Promise(r=>setTimeout(r,0))
-        const segLen=Math.floor(sr*5),numSegs=Math.ceil(buffer.length/segLen),total=buffer.length+pad
-        const offline=new OfflineAudioContext(ch,total,sr)
-        const nd=makeNoise(Math.max(Math.floor(sr*(buffer.duration+dm/1000)),sr*30))
-        const nb=offline.createBuffer(1,nd.length,sr);nb.getChannelData(0).set(nd)
-        const ns=offline.createBufferSource();ns.buffer=nb;ns.loop=nd.length<total
-        const ng=offline.createGain();ng.gain.value=.001;ns.connect(ng);const ng2=offline.createGain();ng.connect(ng2);ng2.connect(offline.destination);ns.start(0)
-        for(let s=0;s<numSegs;s++){const st=s*segLen,en=Math.min((s+1)*segLen,buffer.length),ss=en-st;if(ss<=0)continue;const seg=offline.createBuffer(ch,ss,sr);for(let c=0;c<ch;c++){const sd=buffer.getChannelData(c),dd=seg.getChannelData(c);for(let i=0;i<ss;i++)dd[i]=sd[st+i]||0};const segSrc=offline.createBufferSource();segSrc.buffer=seg;let chain=pert(offline,segSrc,s);const tv=TV[s%TV.length];if(tv!==1.0)segSrc.playbackRate.value=tv;const gg=offline.createGain();chain.connect(gg);gg.connect(offline.destination);segSrc.start((pad+st)/sr);setLoadPct(5+Math.round(s/numSegs*50));if(s%5===0)await new Promise(r=>setTimeout(r,0))}
-        setLoadText('Stealth: rendering...');setLoadPct(55);buffer=await offline.startRendering();setLoadPct(70)
+        setLoadText('Segments...');setLoadPct(5);await new Promise(r=>setTimeout(r,0))
+        const seg=Math.floor(sr*5),n=Math.ceil(buf.length/seg),total=buf.length+pad
+        const o=new OfflineAudioContext(ch,total,sr)
+        const nd=makeNoise(Math.max(Math.floor(sr*(buf.duration+dm/1000)),sr*30))
+        const nb=o.createBuffer(1,nd.length,sr);nb.getChannelData(0).set(nd)
+        const ns=o.createBufferSource();ns.buffer=nb;ns.loop=nd.length<total
+        const ng=o.createGain();ng.gain.value=.001;ns.connect(ng);const ng2=o.createGain();ng.connect(ng2);ng2.connect(o.destination);ns.start(0)
+        for(let s=0;s<n;s++){const st=s*seg,en=Math.min((s+1)*seg,buf.length),ss=en-st;if(ss<=0)continue;const sg=o.createBuffer(ch,ss,sr);for(let c=0;c<ch;c++){const sd=buf.getChannelData(c),dd=sg.getChannelData(c);for(let i=0;i<ss;i++)dd[i]=sd[st+i]||0};const src=o.createBufferSource();src.buffer=sg;let ch2=pert(o,src,s);const tv=TV[s%TV.length];if(tv!==1.0)src.playbackRate.value=tv;const gg=o.createGain();ch2.connect(gg);gg.connect(o.destination);src.start((pad+st)/sr);setLoadPct(5+Math.round(s/n*50));if(s%5===0)await new Promise(r=>setTimeout(r,0))}
+        setLoadText('Rendering...');setLoadPct(55);buf=await o.startRendering();setLoadPct(70)
       }else{
-        const cfg=LG[mode];if(!cfg)throw new Error('Unknown')
-        setLoadText(`${mode}: EQ+effects...`);setLoadPct(5);await new Promise(r=>setTimeout(r,0))
-        const ch2=cfg.m?1:ch,total=buffer.length+pad
-        const offline=new OfflineAudioContext(ch2,total,sr);const src=offline.createBufferSource();src.buffer=buffer
-        let chain=src;chain=eq(offline,chain,cfg.eq,cfg.g);if(cfg.tempo!==1.0)src.playbackRate.value=cfg.tempo
-        if(cfg.p)chain=phaser(offline,chain);if(cfg.c)chain=chorus(offline,chain)
-        if(cfg.m&&ch>1){const m=offline.createChannelMerger(1);chain.connect(m);chain=m}
-        const gg=offline.createGain();chain.connect(gg);gg.connect(offline.destination);src.start(pad/sr)
+        const c=LG[mode];if(!c)throw new Error('Unknown')
+        setLoadText(`${mode}...`);setLoadPct(5);await new Promise(r=>setTimeout(r,0))
+        const ch2=c.m?1:ch,total=buf.length+pad
+        const o=new OfflineAudioContext(ch2,total,sr);const src=o.createBufferSource();src.buffer=buf
+        let chain=src;chain=eq(o,chain,c.eq,c.g);if(c.tempo!==1.0)src.playbackRate.value=c.tempo
+        if(c.p)chain=phaser(o,chain);if(c.c)chain=chorus(o,chain)
+        if(c.m&&ch>1){const m=o.createChannelMerger(1);chain.connect(m);chain=m}
+        const gg=o.createGain();chain.connect(gg);gg.connect(o.destination);src.start(pad/sr)
         await new Promise(r=>setTimeout(r,0));setLoadPct(25)
-        let processed=await offline.startRendering();setLoadPct(55)
+        let p=await o.startRendering();setLoadPct(55)
         const kb=mode==='ringan'?160:mode==='sedang'?128:mode==='berat'?96:64
-        setLoadText(`MP3 re-encode ${kb}k...`);setLoadPct(65);await new Promise(r=>setTimeout(r,0))
-        const mp3=await encodeMp3Blob(processed,kb);const ac2=new AudioContext()
-        buffer=await ac2.decodeAudioData((await mp3.arrayBuffer()).slice(0));await ac2.close();setLoadPct(75)
+        setLoadText(`Re-encode ${kb}k...`);setLoadPct(65);await new Promise(r=>setTimeout(r,0))
+        const m=await encodeMp3Blob(p,kb);const ac2=new AudioContext()
+        buf=await ac2.decodeAudioData((await m.arrayBuffer()).slice(0));await ac2.close();setLoadPct(75)
       }
-      setLoadText(`Encoding ${format.toUpperCase()}...`);setLoadPct(85);await new Promise(r=>setTimeout(r,0))
-      let outBlob
-      if(format==='mp3')outBlob=await encodeMp3Blob(buffer,192)
-      else if(format==='ogg'){try{outBlob=await encodeOggBlob(buffer)}catch(e){console.warn(e);outBlob=encodeWavBlob(buffer)}}
-      else outBlob=encodeWavBlob(buffer)
-      setPreviewDur(buffer.duration)
-      const url=URL.createObjectURL(outBlob);setPreviewUrl(url)
+      setLoadText(`Encode ${format}...`);setLoadPct(85);await new Promise(r=>setTimeout(r,0))
+      let out
+      if(format==='mp3')out=await encodeMp3Blob(buf,192)
+      else if(format==='ogg'){try{out=await encodeOggBlob(buf)}catch(e){console.warn(e);out=encodeWavBlob(buf)}}
+      else out=encodeWavBlob(buf)
+      setPreviewDur(buf.duration)
+      const url=URL.createObjectURL(out);setPreviewUrl(url)
       if(audioRef.current){audioRef.current.src=url;audioRef.current.load()}
       setLoadPct(100);setLoadText('Selesai!');setLoading(false)
     }catch(e){setError('Error: '+(e.message||e));setLoading(false)}
@@ -134,20 +107,19 @@ export default function EditSong() {
     if(!uid&&!gid){setError('Isi User ID atau Group ID!');return}
     setLoading(true);setLoadPct(0);setLoadText('Uploading...');setError('');setResult(null)
     try{
-      const resp=await fetch(previewUrl);const blob=await resp.blob()
-      const name=(dName||file?.name||'Audio').replace(/\.[^.]+$/,'').slice(0,50)
+      const r=await fetch(previewUrl);const b=await r.blob();const name=(dName||file?.name||'Audio').replace(/\.[^.]+$/,'').slice(0,50)
       const fd=new FormData()
       fd.append('request',JSON.stringify({displayName:name,description:desc||`Uploaded via BMS Studio — Mode: ${mode}`,assetType:'Audio',creationContext:{creator:gid.trim()?{groupId:Number(gid)}:{userId:Number(uid)}}}))
-      fd.append('fileContent',blob,`${name}.${format}`)
-      const xhr=new XMLHttpRequest()
-      xhr.open('POST','https://apis.roblox.com/assets/v1/assets',true)
-      xhr.setRequestHeader('x-api-key',ak);xhr.timeout=180000
-      xhr.upload.onprogress=e=>{if(e.lengthComputable)setLoadPct(Math.round(10+(e.loaded/e.total)*80))}
-      await new Promise((resolve,reject)=>{
-        xhr.onload=()=>{
-          if(xhr.status>=200&&xhr.status<300){let d;try{d=JSON.parse(xhr.responseText)}catch{d={}}const id=d.assetId||d.path?.split('/')?.pop()||'?';setResult({assetId:id,url:`https://www.roblox.com/library/${id}/`});setLoadPct(100);resolve()}
-          else{let msg=xhr.responseText;try{const d=JSON.parse(xhr.responseText);msg=d?.error?.message||d?.errors?.[0]?.message||msg}catch{};reject(new Error(msg||`HTTP ${xhr.status}`))}}
-        xhr.onerror=()=>reject(new Error('Network error'));xhr.ontimeout=()=>reject(new Error('Timeout'));xhr.send(fd)
+      fd.append('fileContent',b,`${name}.${format}`)
+      const x=new XMLHttpRequest()
+      x.open('POST','https://apis.roblox.com/assets/v1/assets',true)
+      x.setRequestHeader('x-api-key',ak);x.timeout=180000
+      x.upload.onprogress=e=>{if(e.lengthComputable)setLoadPct(Math.round(10+(e.loaded/e.total)*80))}
+      await new Promise((res,rej)=>{
+        x.onload=()=>{
+          if(x.status>=200&&x.status<300){let d;try{d=JSON.parse(x.responseText)}catch{d={}}const id=d.assetId||d.path?.split('/')?.pop()||'?';setResult({assetId:id,url:`https://www.roblox.com/library/${id}/`});setLoadPct(100);res()}
+          else{let m=x.responseText;try{const d=JSON.parse(x.responseText);m=d?.error?.message||d?.errors?.[0]?.message||m}catch{};rej(new Error(m||`HTTP ${x.status}`))}}
+        x.onerror=()=>rej(new Error('Network error'));x.ontimeout=()=>rej(new Error('Timeout'));x.send(fd)
       })
       setLoading(false)
     }catch(e){setError('Upload error: '+(e.message||e));setLoading(false)}
@@ -160,6 +132,8 @@ export default function EditSong() {
   function pickFile(f){setFile(f);setPreviewUrl(null);setPreviewDur(0);setResult(null);setError('')}
 
   const mc=MODES.find(m=>m.id===mode)?.color||'#d4af37'
+  const avatarUrl=uid?`https://www.roblox.com/Thumbs/Avatar.ashx?userId=${uid}&x=150&y=150&format=png`:null
+  const groupUrl=gid?`https://www.roblox.com/Thumbs/GroupIcon.ashx?groupId=${gid}&x=150&y=150&format=png`:null
 
   return (<div className="page-pad" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
     <SectionHead kicker="// studio" title="Bypass Audible Magic"
@@ -168,162 +142,163 @@ export default function EditSong() {
     </SectionHead>
     {error&&<div className="mb-4"><ErrorBox title="Error" message={error}/></div>}
 
-    <div className="grid lg:grid-cols-5 gap-4">
-      {/* LEFT: Main content (3/5) */}
-      <div className="lg:col-span-3 space-y-4">
+    <div className="grid lg:grid-cols-5 gap-5">
 
-        {/* ROW 1: File + Info */}
-        <div className="grid md:grid-cols-5 gap-4">
-          <div className="md:col-span-3">
-            <div className={`panel p-4 h-full transition-all duration-300 ${dragOver?'scale-[1.02] border-gold/60':''}`}>
-              <div className="flex items-center gap-2 mb-3"><FileAudio size={14} className="text-gold"/><span className="card-title">File Audio</span></div>
-              <div className="border-2 border-dashed border-white/10 bg-jet/30 text-center cursor-pointer hover:border-gold/40 hover:bg-gold/5 transition-all duration-300 rounded-lg p-6"
-                onClick={()=>fileRef.current?.click()}
-                style={dragOver?{borderColor:'rgba(212,175,55,0.6)',background:'rgba(212,175,55,0.05)'}:{}}>
-                <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={e=>e.target.files?.[0]&&pickFile(e.target.files[0])}/>
-                <div className="text-2xl mb-1">{file?'🎵':'🎵'}</div>
-                {file?<><div className="font-bold text-white text-sm">{file.name}</div><div className="text-[10px] font-mono text-white/40 mt-1">{fmtBytes(file.size)}</div></>
-                  :<><div className="font-bold text-white text-sm">Klik atau drop file</div><div className="text-[10px] font-mono text-white/40 mt-1">mp3 · wav · ogg · flac · m4a</div></>}
-              </div>
-            </div>
-          </div>
-          <div className="md:col-span-2">
-            <div className="panel p-4 h-full">
-              <div className="flex items-center gap-2 mb-3"><Settings2 size={14} className="text-gold"/><span className="card-title">Info Upload</span></div>
-              <div className="space-y-2">
-                <input value={dName} onChange={e=>setDName(e.target.value)} placeholder="Nama lagu" className="input text-sm"/>
-                <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Deskripsi (opsional)" className="input text-xs" rows={3} style={{resize:'none'}}/>
+      {/* ===== MAIN (3/5) ===== */}
+      <div className="lg:col-span-3 space-y-5">
+
+        {/* FILE + INFO */}
+        <div className="relative">
+          <div className={`relative overflow-hidden rounded-2xl backdrop-blur-xl ${dragOver?'scale-[1.01]':''} transition-all duration-300`}
+            style={{background:dragOver?'rgba(212,175,55,0.04)':'rgba(18,18,24,0.5)',border:`1px solid ${dragOver?'rgba(212,175,55,0.3)':'rgba(255,255,255,0.04)'}`,boxShadow:dragOver?'0 0 40px rgba(212,175,55,0.06)':'0 4px 24px rgba(0,0,0,0.2)'}}>
+            <div className="absolute inset-0 bg-gradient-to-br from-gold/[0.02] to-transparent pointer-events-none"/>
+            <div className="p-5 relative">
+              <div className="flex items-center gap-2 mb-4"><Sparkles size={15} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Source</span></div>
+              <div className="grid md:grid-cols-5 gap-4">
+                <div className="md:col-span-3">
+                  <div className={`rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-300`}
+                    style={{borderColor:dragOver?'rgba(212,175,55,0.4)':'rgba(255,255,255,0.06)',background:dragOver?'rgba(212,175,55,0.04)':'rgba(0,0,0,0.15)'}}
+                    onClick={()=>fileRef.current?.click()}>
+                    <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={e=>e.target.files?.[0]&&pickFile(e.target.files[0])}/>
+                    <div className="text-3xl mb-2 opacity-40">{file?'🎵':'🎵'}</div>
+                    {file?<><div className="font-semibold text-white text-sm">{file.name}</div><div className="text-[10px] font-mono text-white/40 mt-1">{fmtBytes(file.size)}</div></>
+                      :<><div className="font-semibold text-white text-sm">Drop audio file here</div><div className="text-[10px] font-mono text-white/40 mt-1">mp3 · wav · ogg · flac · m4a</div></>}
+                  </div>
+                </div>
+                <div className="md:col-span-2 space-y-2">
+                  <div className="flex items-center gap-2 mb-1"><Settings2 size={12} className="text-gold/60"/><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/40">Detail</span></div>
+                  <input value={dName} onChange={e=>setDName(e.target.value)} placeholder="Nama lagu" className="input text-sm"/>
+                  <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Deskripsi (opsional)" className="input text-xs" rows={2} style={{resize:'none'}}/>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ROW 2: Mode Selector */}
-        <div className="panel p-4">
-          <div className="flex items-center gap-2 mb-3"><ShieldAlert size={14} className="text-gold"/><span className="card-title">Mode Bypass</span></div>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {MODES.map(m=>
-              <button key={m.id} onClick={()=>{setMode(m.id);localStorage.setItem(MK,m.id)}}
-                className="px-3 py-2 border text-xs font-mono text-center transition-all duration-200 rounded-lg whitespace-nowrap"
-                style={{borderColor:mode===m.id?m.color:'rgba(255,255,255,0.08)',background:mode===m.id?`${m.color}15`:'rgba(0,0,0,0.2)',color:mode===m.id?m.color:'rgba(255,255,255,0.5)',boxShadow:mode===m.id?`0 0 20px ${m.color}20`:'none'}}>
-                <div className="font-bold">{m.label}</div>
-                <div className="opacity-60" style={{fontSize:9}}>{m.desc}</div>
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              <label className="text-[9px] font-mono uppercase text-white/40">Output</label>
-              <select value={format} onChange={e=>setFormat(e.target.value)} className="input text-xs font-mono" style={{width:80}}>
-                <option value="ogg">OGG</option><option value="mp3">MP3</option><option value="wav">WAV</option>
-              </select>
+        {/* MODE */}
+        <div className="relative overflow-hidden rounded-2xl backdrop-blur-xl transition-all duration-300"
+          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+          <div className="absolute inset-0 bg-gradient-to-br from-gold/[0.02] to-transparent pointer-events-none"/>
+          <div className="p-5 relative">
+            <div className="flex items-center gap-2 mb-4"><ShieldAlert size={15} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Bypass Mode</span></div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {MODES.map(m=>
+                <button key={m.id} onClick={()=>{setMode(m.id);localStorage.setItem(MK,m.id)}}
+                  className="px-4 py-2.5 text-xs font-mono text-center transition-all duration-200 rounded-xl whitespace-nowrap"
+                  style={{background:mode===m.id?`${m.color}18`:'rgba(255,255,255,0.03)',border:`1px solid ${mode===m.id?`${m.color}40`:'rgba(255,255,255,0.04)'}`,color:mode===m.id?m.color:'rgba(255,255,255,0.45)',boxShadow:mode===m.id?`0 0 30px ${m.color}15`:'none'}}>
+                  <div className="font-bold">{m.label}</div>
+                  <div className="opacity-60" style={{fontSize:9}}>{m.desc}</div>
+                </button>
+              )}
             </div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={decoy} onChange={e=>setDecoy(e.target.checked)} className="accent-gold" style={{width:14,height:14}}/>
-              <span className="text-xs text-white/60">Decoy Start 4s</span>
-            </label>
+            <div className="flex items-center gap-5 flex-wrap">
+              <div className="flex items-center gap-2"><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/40">Output</span>
+                <select value={format} onChange={e=>setFormat(e.target.value)} className="input text-xs font-mono" style={{width:80,borderRadius:8}}>
+                  <option value="ogg">OGG</option><option value="mp3">MP3</option><option value="wav">WAV</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={decoy} onChange={e=>setDecoy(e.target.checked)} className="accent-gold" style={{width:14,height:14}}/>
+                <span className="text-xs text-white/50">Decoy Start 4s</span>
+              </label>
+            </div>
           </div>
         </div>
 
-        {/* ROW 3: Actions + Progress */}
+        {/* ACTIONS */}
         <div className="flex gap-3">
-          <button onClick={processAudio} disabled={loading||!file} className="btn-primary btn flex-1 py-3">
-            {loading&&loadText!=='Selesai!'?'⏳':<UploadCloud size={14}/>} Process
-          </button>
-          <button onClick={handleUpload} disabled={loading||!previewUrl} className="btn flex-1 py-3"
-            style={{background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.3)',color:'#34d399'}}>
-            {loading&&loadText==='Uploading...'?'⏳':<Upload size={14}/>} Upload
-          </button>
+          <button onClick={processAudio} disabled={loading||!file}
+            className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-[0.1em] transition-all duration-200 disabled:opacity-30 border"
+            style={{background:'rgba(212,175,55,0.08)',borderColor:'rgba(212,175,55,0.25)',color:'#d4af37'}}>
+            {loading&&loadText!=='Selesai!'?'⏳':<UploadCloud size={14} className="inline mr-1.5"/>} Process</button>
+          <button onClick={handleUpload} disabled={loading||!previewUrl}
+            className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-[0.1em] transition-all duration-200 disabled:opacity-30 border"
+            style={{background:'rgba(16,185,129,0.08)',borderColor:'rgba(16,185,129,0.25)',color:'#34d399'}}>
+            {loading&&loadText==='Uploading...'?'⏳':<Upload size={14} className="inline mr-1.5"/>} Upload</button>
         </div>
 
-        {loading&&<div className="panel p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-mono text-white/60">{loadText}</span>
-            <div className="flex items-center gap-2"><span className="text-xs font-mono text-gold">{loadPct}%</span></div>
-          </div>
-          <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-500 ease-out"
-              style={{width:`${loadPct}%`,background:`linear-gradient(90deg,${mc},#f0d68a)`}}/>
+        {/* PROGRESS */}
+        {loading&&<div className="rounded-xl backdrop-blur-xl p-4" style={{background:'rgba(18,18,24,0.4)',border:'1px solid rgba(255,255,255,0.04)'}}>
+          <div className="flex items-center justify-between mb-2"><span className="text-xs font-mono text-white/50">{loadText}</span><span className="text-xs font-mono text-gold">{loadPct}%</span></div>
+          <div className="h-2 rounded-full overflow-hidden" style={{background:'rgba(255,255,255,0.04)'}}>
+            <div className="h-full rounded-full transition-all duration-500 ease-out" style={{width:`${loadPct}%`,background:`linear-gradient(90deg,${mc},#f0d68a)`}}/>
           </div>
         </div>}
 
-        {/* ROW 4: Preview */}
-        {previewUrl&&<div className="panel p-4">
+        {/* PREVIEW */}
+        {previewUrl&&<div className="rounded-xl backdrop-blur-xl p-5" style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><Music2 size={14} className="text-gold"/>
-              <span className="card-title">Preview{previewDur>0?` · ${fmtTime(Math.round(previewDur))}`:''}</span>
-            </div>
-            <a href={previewUrl} download={`bypassed_${mode}.${format}`} className="btn-ghost btn-xs flex items-center gap-1">
-              <Download size={11}/> Download
-            </a>
+            <div className="flex items-center gap-2"><Music2 size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.1em] text-white/50">Preview{previewDur>0?` · ${fmtTime(Math.round(previewDur))}`:''}</span></div>
+            <a href={previewUrl} download={`bypassed_${mode}.${format}`} className="btn-ghost btn-xs flex items-center gap-1 rounded-lg"><Download size={11}/> Download</a>
           </div>
           <audio ref={audioRef} controls preload="auto" className="w-full rounded-lg"/>
         </div>}
 
-        {/* ROW 5: Result */}
-        {result&&result.assetId&&<div className="panel p-5 relative overflow-hidden" style={{borderColor:'rgba(16,185,129,0.3)',background:'linear-gradient(135deg,rgba(16,185,129,0.05),transparent)'}}>
-          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-400/5 rounded-full -translate-y-1/2 translate-x-1/4"/>
-          <div className="relative flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-full bg-emerald-400/10 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" className="w-5 h-5"><path d="M20 6L9 17l-5-5"/></svg></div>
-            <div><div className="text-emerald-400 font-bold">Upload Berhasil!</div><div className="text-xs font-mono text-white/50">Asset ID: {result.assetId}</div></div>
+        {/* RESULT */}
+        {result&&result.assetId&&<div className="relative overflow-hidden rounded-2xl p-5" style={{background:'linear-gradient(135deg,rgba(16,185,129,0.06),transparent)',border:'1px solid rgba(16,185,129,0.2)'}}>
+          <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-20" style={{background:'radial-gradient(circle,rgba(16,185,129,0.3),transparent 70%)',transform:'translate(30%,-30%)'}}/>
+          <div className="relative flex items-center gap-3"><div className="w-10 h-10 rounded-full flex items-center justify-center" style={{background:'rgba(16,185,129,0.1)'}}><svg viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" className="w-5 h-5"><path d="M20 6L9 17l-5-5"/></svg></div>
+            <div><div className="text-emerald-400 font-bold">Upload Berhasil!</div><div className="text-xs font-mono text-white/50 mt-0.5">Asset ID: {result.assetId}</div></div>
           </div>
-          {result.url&&<a href={result.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-gold text-xs mt-2 hover:underline relative ml-[52px]">Lihat di Roblox <ExternalLink size={11}/></a>}
+          {result.url&&<a href={result.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-gold text-xs mt-3 hover:underline relative" style={{marginLeft:52}}>Lihat di Roblox <ExternalLink size={11}/></a>}
         </div>}
         {result&&result.saved&&<div className="text-emerald-400 text-xs font-mono">✓ Disimpan</div>}
       </div>
 
-      {/* RIGHT: Sidebar (2/5) */}
-      <div className="lg:col-span-2 space-y-4">
+      {/* ===== SIDEBAR (2/5) ===== */}
+      <div className="lg:col-span-2 space-y-5">
 
-        {/* Roblox Preview */}
-        <div className="panel p-4">
-          <div className="flex items-center gap-2 mb-4"><User size={14} className="text-gold"/><span className="card-title">Roblox Preview</span></div>
+        {/* AVATAR + GROUP */}
+        <div className="rounded-2xl backdrop-blur-xl p-5 transition-all duration-300"
+          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+          <div className="flex items-center gap-2 mb-4"><Sparkles size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Roblox Preview</span></div>
           <div className="flex gap-4 mb-3">
             <div className="flex-1 text-center">
-              <div className="w-20 h-20 mx-auto rounded-full bg-jet border border-white/10 overflow-hidden flex items-center justify-center text-white/20 transition-all duration-300"
-                style={avatarUrl?{boxShadow:'0 0 30px rgba(212,175,55,0.25)'}:{}}>
-                {avatarUrl?<img src={avatarUrl} className="w-full h-full object-cover"/>:<User size={28}/>}
+              <div className="w-20 h-20 mx-auto rounded-2xl overflow-hidden flex items-center justify-center transition-all duration-300"
+                style={{background:'rgba(0,0,0,0.25)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:!imgErr.avatar&&avatarUrl?'0 0 30px rgba(212,175,55,0.15)':'none'}}>
+                {avatarUrl&&!imgErr.avatar?<img src={avatarUrl} onError={()=>setImgErr(p=>({...p,avatar:1}))} className="w-full h-full object-cover"/>:<div className="text-white/15"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>}
               </div>
-              <div className="text-[9px] font-mono text-white/40 mt-2">User Avatar</div>
-              {avatarErr&&<div className="text-[8px] font-mono text-red-400 mt-1">{avatarErr}</div>}
+              <div className="text-[9px] font-mono text-white/40 mt-2">User</div>
             </div>
             <div className="flex-1 text-center">
-              <div className="w-20 h-20 mx-auto rounded-xl bg-jet border border-white/10 overflow-hidden flex items-center justify-center text-white/20 transition-all duration-300"
-                style={giconUrl?{boxShadow:'0 0 30px rgba(212,175,55,0.25)'}:{}}>
-                {giconUrl?<img src={giconUrl} className="w-full h-full object-cover"/>:<Users size={28}/>}
+              <div className="w-20 h-20 mx-auto rounded-2xl overflow-hidden flex items-center justify-center transition-all duration-300"
+                style={{background:'rgba(0,0,0,0.25)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:!imgErr.group&&groupUrl?'0 0 30px rgba(212,175,55,0.15)':'none'}}>
+                {groupUrl&&!imgErr.group?<img src={groupUrl} onError={()=>setImgErr(p=>({...p,group:1}))} className="w-full h-full object-cover"/>:<div className="text-white/15"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>}
               </div>
-              <div className="text-[9px] font-mono text-white/40 mt-2">Group Icon</div>
-              {giconErr&&<div className="text-[8px] font-mono text-red-400 mt-1">{giconErr}</div>}
+              <div className="text-[9px] font-mono text-white/40 mt-2">Group</div>
             </div>
           </div>
-          <div className="flex gap-2"><button onClick={fetchAvatar} className="btn-ghost btn-xs flex-1"><RefreshCw size={10}/> Ambil</button><button onClick={fetchGicon} className="btn-ghost btn-xs flex-1"><RefreshCw size={10}/> Ambil</button></div>
+          <div className="text-[10px] font-mono text-white/30 text-center">Masukkan ID, gambar otomatis tampil</div>
         </div>
 
-        {/* API Key + IDs */}
-        <div className="panel p-4">
+        {/* CREDENTIALS */}
+        <div className="rounded-2xl backdrop-blur-xl p-5"
+          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2"><KeyRound size={14} className="text-gold"/><span className="card-title">Credentials</span></div>
-            {ak?<StatusBadge variant="success" dot/>:<StatusBadge variant="destructive" dot/>}
+            <div className="flex items-center gap-2"><KeyRound size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Credentials</span></div>
+            <div className={`w-2 h-2 rounded-full ${ak?'bg-emerald-400':'bg-red-400'}`}/>
           </div>
           <div className="space-y-2">
             <div className="flex gap-1.5">
-              <input type={showAk?'text':'password'} value={ak} onChange={e=>setAk(e.target.value)} placeholder="API Key rbx_..." className="input text-xs flex-1 font-mono"/>
-              <button onClick={()=>setShowAk(s=>!s)} className="btn-ghost btn-xs px-2">{showAk?<EyeOff size={12}/>:<Eye size={12}/>}</button>
+              <input type={showAk?'text':'password'} value={ak} onChange={e=>setAk(e.target.value)} placeholder="API Key rbx_..." className="input text-xs flex-1 font-mono" style={{borderRadius:8}}/>
+              <button onClick={()=>setShowAk(s=>!s)} className="btn-ghost btn-xs px-2" style={{borderRadius:8}}>{showAk?<EyeOff size={12}/>:<Eye size={12}/>}</button>
             </div>
-            <input value={uid} onChange={e=>setUid(e.target.value)} placeholder="User ID (angka)" className="input text-xs font-mono"/>
-            <input value={gid} onChange={e=>setGid(e.target.value)} placeholder="Group ID (angka)" className="input text-xs font-mono"/>
-            <button onClick={saveAll} className="btn-primary btn-xs btn-full mt-1"><KeyRound size={11}/> Simpan Semua</button>
+            <input value={uid} onChange={e=>setUid(e.target.value)} placeholder="User ID" className="input text-xs font-mono" style={{borderRadius:8}}/>
+            <input value={gid} onChange={e=>setGid(e.target.value)} placeholder="Group ID" className="input text-xs font-mono" style={{borderRadius:8}}/>
+            <button onClick={saveAll} className="w-full py-2 rounded-xl font-bold text-xs uppercase tracking-[0.1em] transition-all duration-200 border"
+              style={{background:'rgba(212,175,55,0.08)',borderColor:'rgba(212,175,55,0.25)',color:'#d4af37'}}><KeyRound size={11} className="inline mr-1.5"/> Simpan</button>
           </div>
         </div>
 
-        {/* Info */}
-        <div className="panel p-4">
-          <div className="flex items-center gap-2 mb-3"><Info size={14} className="text-gold"/><span className="card-title">Info</span></div>
-          <div className="text-xs font-mono text-white/50 leading-relaxed space-y-2">
-            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400"/>Proses 100% di browser</div>
-            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-gold"/>Upload via Roblox Open Cloud</div>
-            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-gold"/>Avatar/Group dari Roblox API</div>
-            <div className="border-t border-white/5 pt-2 mt-2 text-[11px] text-white/30">Shield/Stealth = metode baru. Ringan s/d Extreme = legacy EQ + MP3 re-encode.</div>
+        {/* INFO */}
+        <div className="rounded-2xl backdrop-blur-xl p-5"
+          style={{background:'rgba(18,18,24,0.5)',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'0 4px 24px rgba(0,0,0,0.2)'}}>
+          <div className="flex items-center gap-2 mb-3"><Info size={14} className="text-gold"/><span className="text-[10px] font-mono uppercase tracking-[0.15em] text-gold/70 font-bold">Info</span></div>
+          <div className="text-xs text-white/40 leading-relaxed space-y-1.5">
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"/>100% browser processing</div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-gold"/>Upload via Roblox Open Cloud</div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-gold"/>Avatar/group via Roblox CDN</div>
+            <div className="border-t border-white/5 pt-2 mt-2 text-[11px] text-white/25 leading-relaxed">Shield/Stealth = metode spektral baru. Ringan s/d Extreme = legacy EQ + MP3 re-encode.</div>
           </div>
         </div>
       </div>
