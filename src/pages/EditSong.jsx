@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Upload, Plus, Wand2, UploadCloud, Trash2, Music2,
   X, ChevronRight, Loader2, Link2, Sparkles, FileAudio,
-  KeyRound, ExternalLink, Eye, EyeOff
+  KeyRound, ExternalLink, Eye, EyeOff, ShieldAlert
 } from "lucide-react"
 import { SectionHead, EmptyState, ErrorBox } from "../components/UI.jsx"
 import StatusBadge from "../components/StatusBadge.jsx"
@@ -40,6 +40,20 @@ export default function EditSong() {
   const [showApiKey, setShowApiKey] = useState(false)
   const [robloxUserId, setRobloxUserIdState] = useState(getUserId() || "")
   const [keySaved, setKeySaved] = useState(false)
+
+  // Bypass processing mode (Audible Magic bypass via BMS server)
+  const [bypassMode, setBypassMode] = useState(() => localStorage.getItem('bms_bypass_mode') || 'none')
+  const [bypassServerUrl, setBypassServerUrl] = useState(() => localStorage.getItem('bms_bypass_url') || 'http://localhost:3000')
+
+  const BYPASS_MODES = [
+    { id: 'none', label: 'None', desc: 'Direct upload' },
+    { id: 'shield', label: 'Shield', desc: 'Spektral + noise floor' },
+    { id: 'stealth', label: 'Stealth', desc: 'Segment-based max' },
+    { id: 'ringan', label: 'Ringan', desc: 'EQ notches halus' },
+    { id: 'sedang', label: 'Sedang', desc: 'EQ + phaser' },
+    { id: 'berat', label: 'Berat', desc: 'EQ + phaser + chorus' },
+    { id: 'extreme', label: 'Extreme', desc: 'Semua efek + mono' },
+  ]
 
   const fileInputRef = useRef(null)
   const audioPlayerRef = useRef(null)
@@ -258,10 +272,72 @@ export default function EditSong() {
     setTimeout(() => setKeySaved(false), 1500)
   }, [apiKey, robloxUserId])
 
+  // ---- Upload with bypass via BMS server ----
+  const uploadItemWithBypass = useCallback(async (id) => {
+    const it = items.find((x) => x.id === id)
+    if (!it) return
+    const key = getApiKey()
+    if (!key) {
+      updateItem(id, { status: "error", error: "API Key belum diisi." })
+      return
+    }
+    const uid = getUserId()
+    if (!uid) {
+      updateItem(id, { status: "error", error: "User ID belum diisi." })
+      return
+    }
+    updateItem(id, { status: "uploading", progress: 5, error: null })
+    try {
+      const blob = it.editedBlob || it.file
+      const filename = it.editedFilename || it.name
+
+      // Step 1: Kirim ke BMS server untuk diproses (bypass)
+      const fd = new FormData()
+      fd.append('audio', blob, (filename + '.wav'))
+      fd.append('level', bypassMode)
+      fd.append('format', 'ogg')
+      fd.append('decoyStart', 'true')
+
+      const previewRes = await fetch(`${bypassServerUrl}/api/preview`, { method: 'POST', body: fd })
+      const previewData = await previewRes.json()
+      if (!previewData.previewId) throw new Error(previewData.error || 'Preview failed')
+      updateItem(id, { progress: 40 })
+
+      // Step 2: Upload ke Roblox via BMS server
+      const ufd = new FormData()
+      ufd.append('previewId', previewData.previewId)
+      ufd.append('displayName', filename.slice(0, 50))
+      ufd.append('description', `Uploaded via BMS Studio — Mode: ${bypassMode}`)
+      ufd.append('userId', uid)
+      ufd.append('apiKey', key)
+
+      const uploadRes = await fetch(`${bypassServerUrl}/api/upload-roblox`, { method: 'POST', body: ufd })
+      const uploadData = await uploadRes.json()
+      if (!uploadData.success) throw new Error(uploadData.error || 'Upload via server failed')
+      if (uploadData.assetId) {
+        updateItem(id, {
+          status: "done", progress: 100,
+          uploadedAssetId: uploadData.assetId,
+          playbackUrl: uploadData.url,
+          publicUrl: uploadData.url,
+          error: null,
+        })
+      } else {
+        throw new Error('No asset ID returned')
+      }
+    } catch (e) {
+      updateItem(id, { status: "error", error: e?.message || String(e) })
+    }
+  }, [items, updateItem, bypassMode, bypassServerUrl])
+
   // ---- Upload single ----
   const uploadItem = useCallback(async (id) => {
     const it = items.find((x) => x.id === id)
     if (!it) return
+    if (bypassMode !== 'none') {
+      await uploadItemWithBypass(id)
+      return
+    }
     if (!hasApiKey()) {
       updateItem(id, {
         status: "error",
@@ -273,8 +349,6 @@ export default function EditSong() {
     try {
       const blob = it.editedBlob || it.file
       const filename = it.editedFilename || it.name
-      // Upload LANGSUNG ke Roblox Open Cloud dari browser.
-      // response shape: { ok, assetId, playbackUrl, path, ownerId, raw }
       const result = await uploadToRoblox({
         file: blob,
         audioName: filename,
@@ -288,7 +362,6 @@ export default function EditSong() {
         publicUrl: result.playbackUrl,
         error: null,
       })
-      // Auto-set userId kalau API response expose
       if (result.ownerId && !getUserId()) {
         setUserId(String(result.ownerId))
         setRobloxUserIdState(String(result.ownerId))
@@ -296,7 +369,7 @@ export default function EditSong() {
     } catch (e) {
       updateItem(id, { status: "error", error: e?.message || String(e) })
     }
-  }, [items, updateItem])
+  }, [items, updateItem, bypassMode, uploadItemWithBypass])
 
   // ---- Upload all ready ----
   const uploadAllReady = useCallback(async () => {
@@ -584,6 +657,56 @@ export default function EditSong() {
             </div>
           </div>
 
+          {/* Bypass Audible Magic panel */}
+          <div className="panel p-4">
+            <div className="card-title flex items-center gap-2">
+              <ShieldAlert size={13} className="text-gold" /> Bypass Audible Magic
+              {bypassMode !== 'none' ? (
+                <StatusBadge variant="gold" dot>active</StatusBadge>
+              ) : (
+                <StatusBadge variant="outline" dot>off</StatusBadge>
+              )}
+            </div>
+            <p className="mt-2 text-[10px] font-mono text-white/50 leading-relaxed">
+              Proses audio lewat server FFmpeg untuk menghindari deteksi Audible Magic. Pastikan server BMS Upload berjalan.
+            </p>
+            <div className="mt-3 space-y-2">
+              <label className="text-[9px] font-mono uppercase text-white/40 tracking-wider block">Server URL</label>
+              <input
+                value={bypassServerUrl}
+                onChange={(e) => {
+                  setBypassServerUrl(e.target.value)
+                  localStorage.setItem('bms_bypass_url', e.target.value)
+                }}
+                placeholder="http://localhost:3000"
+                className="input text-xs font-mono"
+              />
+              <label className="text-[9px] font-mono uppercase text-white/40 tracking-wider block pt-1">Mode</label>
+              <div className="grid grid-cols-2 gap-1">
+                {BYPASS_MODES.filter(m => m.id !== 'none').map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => { setBypassMode(m.id); localStorage.setItem('bms_bypass_mode', m.id) }}
+                    className={`px-2 py-1.5 border text-[10px] font-mono text-left transition-colors ${
+                      bypassMode === m.id
+                        ? 'border-gold bg-gold/10 text-gold'
+                        : 'border-white/10 bg-jet/30 text-white/60 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="font-bold">{m.label}</div>
+                    <div className="text-[8px] opacity-60">{m.desc}</div>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => { setBypassMode('none'); localStorage.setItem('bms_bypass_mode', 'none') }}
+                className={`btn btn-xs btn-full mt-1 ${bypassMode === 'none' ? 'btn-primary' : 'btn-ghost'}`}
+              >
+                Nonaktifkan bypass (direct upload)
+              </button>
+            </div>
+          </div>
+
           <div className="panel p-4">
             <div className="card-title flex items-center gap-2">
               <FileAudio size={13} className="text-gold" /> Tips
@@ -591,7 +714,7 @@ export default function EditSong() {
             <ul className="mt-2 space-y-1 text-[11px] font-mono text-white/50 list-disc pl-4">
               <li>Edit multiple files in one go via the per-row <span className="text-gold">Edit</span> action.</li>
               <li>Speed greater than 1x raises pitch (browser behavior); use the <em>Pitch</em> slider to compensate.</li>
-              <li>Uploads are sent langsung ke Roblox Open Cloud — tidak butuh backend.</li>
+              <li>Aktifkan <span className="text-gold">Bypass Audible Magic</span> untuk proses audio lewat server FFmpeg sebelum upload.</li>
               <li>Cover art is extracted from ID3 tags when present.</li>
             </ul>
           </div>

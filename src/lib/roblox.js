@@ -195,16 +195,20 @@ function _extractOpError(data) {
 
 export async function pollAudioOperation(apiKey, operationId, { timeoutMs = 180_000, intervalMs = 3000 } = {}) {
   const start = Date.now()
-  const url = `https://apis.roblox.com/assets/v1/operations/${encodeURIComponent(operationId)}`
+  // Pakai CORS proxy di server.js. Browser TIDAK bisa langsung GET ke
+  // apis.roblox.com (sama seperti upload — CORS diblokir).
+  const url = `/api/roblox/poll/${encodeURIComponent(operationId)}?apiKey=${encodeURIComponent(apiKey.trim())}`
   while (Date.now() - start < timeoutMs) {
     let res
     try {
-      res = await fetch(url, { headers: { 'x-api-key': apiKey.trim() } })
+      res = await fetch(url)
     } catch (err) {
       throw new Error('Network: ' + (err.message || err))
     }
     if (res.ok) {
-      const data = await res.json().catch(() => ({}))
+      const payload = await res.json().catch(() => ({}))
+      // Proxy membungkus: { success, data: { done, response, ... } }
+      const data = (payload && payload.data) ? payload.data : (payload || {})
       if (data && data.done === true) {
         const assetId = _extractOpAssetId(data)
         if (assetId) {

@@ -148,10 +148,17 @@ export async function uploadAudio({
 
   if (onProgress) onProgress(10)
 
-  // Pakai XHR supaya bisa track upload progress.
+  // Pakai CORS proxy di server.js. Browser TIDAK bisa langsung POST ke
+  // apis.roblox.com karena endpoint itu tidak mengembalikan
+  // Access-Control-Allow-Origin (diverifikasi: OPTIONS 403 + tanpa ACAO).
+  // Jadi upload dilewatkan ke /api/roblox/upload di server kita, yang
+  // forward ke Roblox dengan apiKey.
   const result = await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    const url = ROBLOX_OPEN_CLOUD.audioInsert
+    // Pakai path relatif supaya otomatis sama dengan origin website
+    // (works untuk bms-studio.github.io ATAU custom domain www.bmsstudio.my.id
+    // selama server.js di-deploy di belakang origin yang sama).
+    const url = '/api/roblox/upload'
 
     xhr.open('POST', url, true)
     // Jangan pakai responseType 'json' dengan multipart upload.
@@ -162,11 +169,8 @@ export async function uploadAudio({
     xhr.withCredentials = false
     // 180 detik = cukup untuk upload audio sampai 20MB di koneksi lambat.
     xhr.timeout = 180000
-    xhr.setRequestHeader('x-api-key', key)
-    // Jangan set header 'Accept' kustom — bikin request jadi non-simple dan memicu
-    // CORS preflight ke apis.roblox.com. Browser default-nya 'Accept: */*' yang
-    // tetap dianggap simple request oleh spec CORS untuk multipart/form-data.
-    // Lihat: https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+    // Browser akan menambahin Content-Type multipart boundary otomatis.
+    // JANGAN set Accept kustom (biar simple request, tanpa preflight).
 
     if (signal) {
       if (signal.aborted) {
@@ -194,26 +198,25 @@ export async function uploadAudio({
         try { body = JSON.parse(rawText) } catch { body = null }
       }
       if (status >= 200 && status < 300) {
-        resolve({ status, body: body || {}, rawText })
+        // Proxy membungkus response: { success, data, raw }
+        const payload = (body && body.data) ? body.data : (body || {})
+        resolve({ status, body: payload, rawText })
       } else {
         const errText = (body && (body.error || body.message || body.errors))
           || rawText
           || `HTTP ${status}`
-        reject(new Error(`Roblox reject (HTTP ${status}): ${errText}`))
+        reject(new Error(`Upload reject (HTTP ${status}): ${errText}`))
       }
     }
 
     xhr.onerror = () => reject(new Error(
-      'Network error saat upload ke Roblox. ' +
-      'Cek koneksi internet, CORS preflight, & pastikan API Key valid. ' +
-      '(URL: ' + url + '). ' +
-      'Tip: buka DevTools → Network, filter "robe" lalu coba ulang. ' +
-      'Kalau ada request "OPTIONS" merah gagal preflight, Roblox belum mengizinkan origin ' +
-      window.location.origin + ' untuk CORS.'
+      'Network error. Browser tidak bisa menghubungi /api/roblox/upload di server ini. ' +
+      'Pastikan server.js sudah jalan dan bisa diakses dari origin ' +
+      window.location.origin + '. ' +
+      'Cek DevTools → Network → cari request ke /api/roblox/upload yang merah.'
     ))
     xhr.ontimeout = () => reject(new Error(
-      'Timeout 180s saat upload ke Roblox. ' +
-      'Cek koneksi atau coba file lebih kecil.'
+      'Timeout 180s saat upload. Cek koneksi atau coba file lebih kecil.'
     ))
 
     xhr.send(fd)

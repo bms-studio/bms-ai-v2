@@ -21,6 +21,8 @@
 //   GET  /api/news/:source                   -> news proxy
 //   POST /api/uploader/:host                 -> file -> various hosts
 //   POST /api/upload-audio                   -> LEGACY: .ROBLOSECURITY cookie flow
+//   POST /api/roblox/upload                  -> CORS proxy to Roblox Open Cloud (mp3/ogg/wav)
+//   POST /api/roblox/poll/:operationId       -> CORS proxy for Operation API
 //
 // The /api/upload-audio endpoint is documented as a placeholder; production
 // users should use the Open Cloud API key flow in the browser.
@@ -47,15 +49,19 @@ const app = express()
 
 function corsFor(req, res) {
   const origin = req.headers.origin
-  // Default: same-origin only (no Access-Control-Allow-Origin sent).
-  // If origin is in allowlist, echo it back.
-  if (origin && (ALLOWED_ORIGINS.length === 0
-      ? origin === `${req.protocol}://${req.get('host')}`
-      : ALLOWED_ORIGINS.includes(origin))) {
+  // Default (no ALLOWED_ORIGINS env): echo any origin (permissive).
+  // This is intentional so the same Express binary can serve a public
+  // /api/roblox/* proxy from custom domains (e.g. www.bmsstudio.my.id).
+  // If you want to lock it down, set ALLOWED_ORIGINS to a CSV of allowed origins.
+  const isAllowed = ALLOWED_ORIGINS.length === 0
+    ? true
+    : ALLOWED_ORIGINS.includes(origin)
+  if (origin && isAllowed) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Vary', 'Origin')
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept')
+    // Penting: izinkan Content-Type multipart boundary + x-api-key untuk proxy Roblox
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Requested-With, x-api-key, Authorization')
     res.setHeader('Access-Control-Max-Age', '600')
   }
 }
@@ -373,6 +379,120 @@ app.post('/api/upload-audio', (req, res) => {
     success: false,
     error: 'This endpoint is deprecated. Use the Open Cloud API Key flow in the browser (see src/lib/uploadApi.js).',
   })
+})
+
+/* -------------------------------------------------------------------------- */
+/*  Roblox Open Cloud CORS proxy                                               */
+/*                                                                             */
+/*  Roblox's apis.roblox.com does NOT return CORS headers for browser-direct  */
+/*  requests (verified: OPTIONS from any origin returns 403 without            */
+/*  Access-Control-Allow-Origin). This proxy lets the browser upload to our  */
+/*  own server, which then forwards to Roblox with the user's API key.        */
+/*                                                                             */
+/*  POST /api/roblox/upload                                                   */
+/*    multipart/form-data:                                                    */
+/*      - apiKey   : string                                                   */
+/*      - userId   : string (optional)                                        */
+/*      - name     : string (displayName)                                      */
+/*      - file     : binary audio (wav/mp3/ogg/m4a)                            */
+/*    → forwards to POST https://apis.roblox.com/assets/v1/assets            */
+/*                                                                             */
+/*  GET /api/roblox/poll/:operationId?apiKey=...                              */
+/*    → forwards to GET https://apis.roblox.com/assets/v1/operations/:id      */
+/* -------------------------------------------------------------------------- */
+
+const ROBLOX_ASSETS = 'https://apis.roblox.com/assets/v1/assets'
+const ROBLOX_OPS    = 'https://apis.roblox.com/assets/v1/operations'
+
+const robloxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB to fit Roblox's 20MB audio limit + headroom
+})
+
+app.post('/api/roblox/upload', robloxUpload.single('file'), async (req, res) => {
+  const apiKey = (req.body && req.body.apiKey || '').trim()
+  const userId = (req.body && req.body.userId || '').trim()
+  const name   = (req.body && req.body.name   || 'audio').toString().slice(0, 50)
+
+  if (!apiKey) {
+    return res.status(400).json({ success: false, error: 'apiKey wajib diisi.' })
+  }
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'file audio wajib diisi.' })
+  }
+
+  // Bangun request payload untuk Roblox Open Cloud
+  const requestPayload = {
+    displayName: name,
+    description: `Uploaded via BMS Studio v2 — ${name}`,
+    assetType: 'Audio',
+  }
+  if (userId) {
+    requestPayload.creationContext = { creator: { userId: Number(userId) } }
+  }
+
+  try {
+    const fd = new FormData()
+    fd.append('request', JSON.stringify(requestPayload))
+    fd.append('fileContent', req.file.buffer, {
+      filename: req.file.originalname || 'audio',
+      contentType: req.file.mimetype || 'audio/wav',
+      knownLength: req.file.size,
+    })
+
+    const upstream = await fetch(ROBLOX_ASSETS, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+      },
+      body: fd,
+    })
+    const text = await upstream.text()
+    let parsed = null
+    try { parsed = JSON.parse(text) } catch { /* keep null */ }
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({
+        success: false,
+        error: (parsed && (parsed.message || (parsed.errors && JSON.stringify(parsed.errors)))) || text || `HTTP ${upstream.status}`,
+        upstream: { status: upstream.status, body: parsed || text },
+      })
+    }
+
+    return res.json({ success: true, data: parsed, raw: text })
+  } catch (err) {
+    return res.status(502).json({ success: false, error: 'Proxy error: ' + (err.message || String(err)) })
+  }
+})
+
+app.get('/api/roblox/poll/:operationId', async (req, res) => {
+  const { operationId } = req.params
+  const apiKey = (req.query.apiKey || '').toString().trim()
+  if (!apiKey) {
+    return res.status(400).json({ success: false, error: 'apiKey wajib diisi.' })
+  }
+  if (!operationId) {
+    return res.status(400).json({ success: false, error: 'operationId wajib diisi.' })
+  }
+  try {
+    const upstream = await fetch(`${ROBLOX_OPS}/${encodeURIComponent(operationId)}`, {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, 'Accept': 'application/json' },
+    })
+    const text = await upstream.text()
+    let parsed = null
+    try { parsed = JSON.parse(text) } catch { /* keep null */ }
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({
+        success: false,
+        error: (parsed && parsed.message) || text || `HTTP ${upstream.status}`,
+        upstream: { status: upstream.status, body: parsed || text },
+      })
+    }
+    return res.json({ success: true, data: parsed })
+  } catch (err) {
+    return res.status(502).json({ success: false, error: 'Proxy error: ' + (err.message || String(err)) })
+  }
 })
 
 /* -------------------------------------------------------------------------- */
