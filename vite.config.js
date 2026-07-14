@@ -6,7 +6,7 @@ export default defineConfig({
   base: process.env.BASE_URL || '/',
   build: {
     outDir: 'dist',
-    sourcemap: false,
+    sourcemap: true,
     target: 'es2020',
     chunkSizeWarningLimit: 1500
   },

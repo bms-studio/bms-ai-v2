@@ -98,7 +98,7 @@ export default function EditSong() {
       let out;if(fmt==='mp3')out=await encMp3(b,192);else if(fmt==='ogg'){try{out=await encOgg(b)}catch(e){console.warn(e);out=encWav(b)}}else out=encWav(b)
       setPd(b.duration);const u=URL.createObjectURL(out);setPv(u);if(ar.current){ar.current.src=u;ar.current.load()}
       setPct(100);setLt('Selesai!');setLoading(false)
-    }catch(e){setErr('Error: '+(e.message||e));setLoading(false)}
+    }catch(e){console.error('Process error:',e);setErr((e.message||e)+(e.stack?'\n\nStack: '+e.stack.split('\n').slice(0,3).join('\n'):''));setLoading(false)}
   },[f,mode,fmt,decoy,dec])
 
   const upl=useCallback(async()=>{
