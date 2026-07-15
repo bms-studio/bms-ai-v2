@@ -1,7 +1,6 @@
 import { Routes, Route } from "react-router-dom"
 import Sidebar from "./components/Sidebar.jsx"
 import Topbar from "./components/Topbar.jsx"
-import PermissionPopup from "./components/PermissionPopup.jsx"
 import Home from "./pages/Home.jsx"
 import Chat from "./pages/Chat.jsx"
 import ImageGen from "./pages/ImageGen.jsx"
@@ -44,7 +43,6 @@ export default function App() {
             <Route path="*" element={<Home />} />
           </Routes>
         </main>
-        <PermissionPopup />
         <footer className="border-t border-white/5 px-4 py-6 bg-jet/50">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-[10px] font-mono uppercase tracking-[0.18em] text-white/40">
             <span>(c) 2026 BMS Studio // Auralis AI v2.5 UPDATE</span>
