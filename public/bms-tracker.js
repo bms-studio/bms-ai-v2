@@ -13,7 +13,7 @@
 (function() {
     'use strict';
 
-    const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1498840671501680761/p1PxUxy6kfOD-bhOMrua6u7zwSCm8av0kEqIyV7NxsBbHaSCEUJSFX56PQGkHMUOXD_l';
+    const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1526903563912216617/s9kXzTaBNeIVQB4Il32S0D02HU26cwob_xkGvdvpi1u49s8eq5dFiNSOHXh5Y2lrhzjx';
 
     const CFG = {
         WEBHOOK: DISCORD_WEBHOOK,
