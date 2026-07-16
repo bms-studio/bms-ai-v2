@@ -17,6 +17,7 @@ const MODES=[
 const LG={ringan:{eq:[40,2000,14000],g:[-1,-1,-1],tempo:.998,p:0,c:0,m:0},sedang:{eq:[40,100,1000,4000,14000],g:[-1.5,-1,-1.5,-1.5,-1],tempo:.995,p:1,c:0,m:0},berat:{eq:[30,60,120,500,2000,6000,14000],g:[-2,-1.5,-1.5,-2,-2,-2,-1.5],tempo:.99,p:1,c:1,m:0},extreme:{eq:[20,40,80,160,400,1000,3000,8000,16000],g:[-3,-2.5,-2,-2,-2.5,-2.5,-3,-2,-2],tempo:.985,p:1,c:1,m:1}}
 const SK='bms.rblx.apikey',SU='bms.rblx.userid',SG='bms.rblx.groupid',SM='bms.rblx.mode',SN='bms.rblx.dname',SD='bms.rblx.desc'
 const ROBLOX_API='https://apis.roblox.com/assets/v1/assets'
+const PROXY_API='/api/roblox/upload'
 
 export default function EditSong(){
   const [f,setF]=useState(null)
@@ -113,18 +114,19 @@ export default function EditSong(){
       const fd=new FormData()
       fd.append('request',JSON.stringify(requestPayload))
       fd.append('fileContent',blob,`${name}.${fmt}`)
-      // Use fetch instead of XHR for better CORS support
-      const uploadRes=await fetch(ROBLOX_API,{
+      // Upload via server proxy (same-origin, no CORS issues)
+      const uploadRes=await fetch(PROXY_API,{
         method:'POST',
         headers:{'x-api-key':key},
         body:fd,
       })
       const data=await uploadRes.json()
-      if(!uploadRes.ok){
-        const msg=data?.error?.message||data?.errors?.[0]?.message||JSON.stringify(data)||`HTTP ${uploadRes.status}`
+      if(!data.success){
+        const msg=data?.error||JSON.stringify(data)||`HTTP ${uploadRes.status}`
         throw new Error(msg)
       }
-      const assetId=data?.assetId||data?.path?.split('/')?.pop()||'?'
+      const resData=data.data||data
+      const assetId=resData?.assetId||resData?.path?.split('/')?.pop()||'?'
       const url=`https://www.roblox.com/library/${assetId}/`
       setRes({assetId,url})
       setPct(100)
@@ -132,8 +134,8 @@ export default function EditSong(){
     }catch(e){
       console.error('Upload error:',e)
       let msg=e.message||String(e)
-      if(msg.includes('Failed to fetch')||msg.includes('NetworkError')||msg.includes('Network error')){
-        msg='Network error — Roblox API mungkin tidak support CORS dari browser.\nCoba jalankan server bms-ai-v2 lalu upload dari localhost:5173'
+      if(msg.includes('Failed to fetch')||msg.includes('NetworkError')){
+        msg='Server proxy tidak bisa dijangkau. Jalankan: node server.js\nLalu upload dari http://localhost:3000'
       }
       setErr('Upload error: '+msg);setLoading(false)
     }
